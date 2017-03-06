@@ -150,6 +150,18 @@ def get_all_losses(exp_name, cp):
     return all_losses
 
 
+def get_training_time(exp_name):
+    pfile_time = open('../results_keras/' + exp_name + '/run_times.p', 'r')
+    training_times, _ = pickle.load(pfile_time)
+    pfile_time.close()
+    return training_times
+
+
+def get_time_per_epoch(exp_name):
+    training_times = get_training_time(exp_name)
+    return training_times[-1]/(len(training_times)-1)
+
+
 def plot_final_loss(exp_name, save_interval=22., smoothing=22.):
     epoch_losses, epoch_val_losses = get_epoch_losses(exp_name)
     all_losses = get_all_losses(exp_name, cp=len(epoch_losses)/save_interval)
