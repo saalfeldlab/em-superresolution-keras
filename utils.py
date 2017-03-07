@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import cPickle as pickle
 import numpy as np
-import scipy
+import scipy.misc
 import os
 
 
@@ -83,8 +83,6 @@ def bicubic_up(arr, factor, axis):
     nd_factor = np.ones(arr.ndim)
     nd_factor[axis] *= factor
     new_shape = (np.array(arr.shape)*nd_factor).astype(int)
-    print(new_shape)
-    print(new_shape.dtype)
     resized_arr = np.zeros(new_shape)
 
     new_shape = tuple(np.delete(new_shape, sliceaxis, 0).astype(int))
@@ -103,7 +101,7 @@ def get_cut_borders(arr):
 
         slice_forward = 0
         slicing_idx[axis] = slice_forward
-        print(slicing_idx)
+
         while np.all(arr[slicing_idx] == 0):
             slice_forward += 1
             slicing_idx[axis] = slice_forward

@@ -18,7 +18,6 @@ else:
     spatial_slice = np.s_[2:]
 
 
-
 class Evaluator:
 
     def __init__(self, model_path, save_path,
@@ -40,23 +39,23 @@ class Evaluator:
         # 1 added in second coordinate to get the right length in case of odd inp. Doesn't hurt for even
         # shorter than int(np.ceil())
         coord_slice = np.s_[coord[0]-inp[0]/2:coord[0]+(inp[0]+1)/2,
-                      coord[1]-inp[1]/2:coord[1]+(inp[1]+1)/2,
-                      coord[2]-inp[2]/2:coord[2]+(inp[2]+1)/2,0]
-        self.data.read_direct(patch, coord_slice, np.s_[:,:,:,0])
-        if K.image_dim_ordering()=='tf':
-            patch = np.swapaxes(np.expand_dims(patch,0),0,4)/255.
+                            coord[1]-inp[1]/2:coord[1]+(inp[1]+1)/2,
+                            coord[2]-inp[2]/2:coord[2]+(inp[2]+1)/2, 0]
+
+        self.data.read_direct(patch, coord_slice, np.s_[:, :, :, 0])
+        if K.image_dim_ordering() == 'tf':
+            patch = np.swapaxes(np.expand_dims(patch, 0), 0, 4)/255.
         else:
             patch = np.transpose(np.expand_dims(patch, -1), (3, 4, 0, 1, 2))/255.
         return patch
-
 
     def test_data_generator(self, ignore_border, bs, safety_margin=(0, 0)):
         """generates data as required by keras"""
         o_shape = self.model.output_shape[spatial_slice]
         border_remainder = (np.array(self.data.shape[:-1])-np.array([0, 0, safety_margin[0] + safety_margin[1]]) -
                             2*np.array(ignore_border)) % (np.array(o_shape) - 2*np.array(ignore_border))
-        x_extra = [] if border_remainder[0] == 0 else [self.data.shape[0] - o_shape[0]/2]
-        y_extra = [] if border_remainder[1] == 0 else [self.data.shape[1] - o_shape[1]/2]
+        x_extra = [] if border_remainder[0] == 0 else [int(self.data.shape[0] - o_shape[0]/2)]
+        y_extra = [] if border_remainder[1] == 0 else [int(self.data.shape[1] - o_shape[1]/2)]
         if border_remainder[2] == 0:
             z_extra = []
         else:
@@ -64,7 +63,7 @@ class Evaluator:
             z_last = range(safety_margin[0] + o_shape[2]/2, self.data.shape[2] - o_shape[2]/2 - safety_margin[1],
                            o_shape[2] - 2*ignore_border[2])[-1]
             overlap_to_last = o_shape[2] - 2*ignore_border[2] - (z_extra-z_last)
-            z_extra = [z_extra - (self.sc - overlap_to_last%self.sc)]
+            z_extra = [int(z_extra - (self.sc - overlap_to_last%self.sc))]
 
         batch = np.zeros(self.model.input_shape[spatial_slice]+(bs,))
         k = 0
@@ -103,7 +102,6 @@ class Evaluator:
             l += 1
             print('justzeros',l)
             yield np.zeros((bs,1,)+self.model.input_shape[spatial_slice])
-
 
     def parallel_coordinates_generator(self, ignore_border, safety_margin=(0,0)):
         """generates the coordinates in the same order as test_data_generator (necessary because keras doesn't allow
@@ -171,7 +169,7 @@ class Evaluator:
         """generate predictions for patches belonging to a list of coordinates (not implemented)"""
         pass
 
-    def run_full_evaluation(self, inner_cube, bs):
+    def run_full_evaluation(self, inner_cube, bs, safety_margin=(0,0)):
         """generate prediction for a whole dataset"""
         self.load_model()
         ignore_border = (np.array(self.model.input_shape[spatial_slice]) - np.array(inner_cube) )/ 2.
@@ -183,8 +181,9 @@ class Evaluator:
         #self.prepare_output_file(self.data.shape[:-1])
         predict = np.zeros(self.data.shape[:-1])
         self.output_file = h5py.File(self.save_path, 'w-')
-        batch_generator = self.test_data_generator(ignore_border, bs)
-        corresponding_coords_generator, counter = itertools.tee(self.parallel_coordinates_generator(ignore_border))
+        batch_generator = self.test_data_generator(ignore_border, bs, safety_margin=safety_margin)
+        corresponding_coords_generator, counter = itertools.tee(self.parallel_coordinates_generator(ignore_border,
+                                                                                                    safety_margin))
         #get length
         for num_coords_to_process, _ in counter:
             pass
@@ -207,6 +206,15 @@ class Evaluator:
         self.output_file.create_dataset('raw', data=predict)
         self.output_file.close()
 
+
+def shifted_evaluation(exp_name, run, cp):
+    for mode in ['validation', 'test']:
+        modelp = utils.get_model_path(exp_name, exp_no=run, ep_no=cp)
+        shifted_evaluator = Evaluator(modelp, '', utils.get_data_path(mode))
+        for shift in range(int(shifted_evaluator.sc)):
+            savep = utils.get_save_path(exp_name, exp_no=run, ep_no=cp, mode=mode, add='_shift'+str(shift))
+            shifted_evaluator.reset_save_path(savep)
+            shifted_evaluator.run_full_evaluation(inner_cube=(48,48,24), bs=6, safety_margin=(shift, -shift))
 
 def Unet_evaluation(ep_no=49):
     n_l = 4
@@ -237,11 +245,11 @@ def run_single_evaluation(run, ep_no, exp_name=None, d=None, s=None, m=None, lr=
         modelp = utils.get_model_path(exp_name, exp_no=run, ep_no=ep_no)
         savep = utils.get_save_path(exp_name, exp_no=run, ep_no=ep_no, mode=mode)
         simple_evaluator = Evaluator(modelp, savep, utils.get_data_path(mode))
-        simple_evaluator.run_full_evaluation(inner_cube=(48,48,24), bs=bs)
+        simple_evaluator.run_full_evaluation(inner_cube=(48, 48, 24), bs=bs)
 
 
 def fsrcnn_hyperparameter_evaluation(ep_no=12):
-    for d in [240,280]:
+    for d in [240, 280]:
         for s in [48, 64]:
             for m in [2,3,4]:
                 for run in range(2):
@@ -269,7 +277,7 @@ if __name__=='__main__':
 
     #single_FSRCNN_evaluation()
     #FSRCNN_evaluation()
-    Unet_evaluation()
+    #Unet_evaluation()
     #evaluate_whole_run()
-
+    shifted_evaluation('Unet_nl4_nc2_nf64_dc1', 0, 49)
     # main()
