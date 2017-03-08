@@ -34,7 +34,6 @@ def run_eval(groundtruth, prediction):
     print("mse: ", mse_error)
     print("psnr:", psnr_error)
     bicubic_weighting = se_arr(bicubic, groundtruth)
-    print(np.max(bicubic_weighting))
     bicubic_weighting = 0.5+bicubic_weighting/(np.max(bicubic_weighting)*2)
     weighted_error_arr = se_arr(prediction, groundtruth) * bicubic_weighting
     weighted_mse_error = np.sum(weighted_error_arr)/groundtruth.size
@@ -98,22 +97,21 @@ def main(filename, mode='validation_and_test'):
     return mse, psnr, bicubic_weighted_mse, bicubic_weighted_psnr
 
 
-def evaluate_fsrcnn():
+def evaluate_fsrcnn(cp=12):
     resultlist = []
     for d in [240, 280]:
         for s in [48,64]:
             for m in [2,3,4]:
                 name='FSRCNN_d{0:}_s{1:}_m{2:}'.format(d,s,m)
                 for run in range(2):
-                    mse, psnr, bc_mse, bc_psnr = main(utils.get_save_path(name, exp_no=run, ep_no=12,mode='validation'),
-                                                      'validation')
-                    mse_t, psnr_t, bc_mse_t, bc_psnr_t = main(utils.get_save_path(name, exp_no=run, ep_no=12, mode='test'),
-                                                              'test')
-                    resultlist.append([d, s, m, run, mse,psnr, bc_mse, bc_psnr, mse_t, psnr_t, bc_mse_t, bc_psnr_t])
+                    resultlist.append([d,s,m, run])
+                    for mode in ['validation', 'test']:
+                        savep = utils.get_save_path(name, exp_no=run, ep_no=cp, mode=mode)
+                        resultlist[-1] += list(main(savep, mode))
     as_str = tabulate.tabulate(resultlist, headers=['d', 's', 'm', 'run', 'mse valid', 'psnr valid', 'bc_mse valid',
                                            'bc_psnr valid', 'mse test', 'psnr test', 'bc_mse test', 'bc_psnr test'])
 
-    file = open('FSRCNN_eval.txt', 'w')
+    file = open('../results_keras/summaries/FSRCNN_eval.txt', 'w')
     file.write(as_str)
     file.close()
 
@@ -121,19 +119,13 @@ def evaluate_fsrcnn():
 def main_evaluate_shift(exp_name, run, cp, sc=4):
     resultlist = []
     for shift in range(sc):
-        mse, psnr, bc_mse, bc_psnr = dict(), dict(), dict(), dict()
         resultlist.append([shift])
         for mode in ['validation', 'test']:
-
             savep = utils.get_save_path(exp_name, exp_no=run, ep_no=cp, mode=mode, add='_shift' + str(shift))
-            mse[mode], psnr[mode], bc_mse[mode], bc_psnr[mode] = main(savep, mode)
-            print(mse[mode])
-            resultlist[-1] += [mse[mode], psnr[mode], bc_mse[mode], bc_psnr[mode]]
-    print(resultlist)
+            resultlist[-1] += list(main(savep, mode))
     as_str = tabulate.tabulate(resultlist, headers=['shift', 'mse valid', 'psnr valid', 'bc_mse valid',
                                                     'bc_psnr valid', 'mse test', 'psnr test', 'bc_mse test',
                                                     'bc_psnr test'])
-    print(as_str)
     shift_file = open(os.path.dirname(savep)+'/shift_evaluation_'+str(cp)+'.txt', 'w')
     shift_file.write(as_str)
     shift_file.close()
@@ -141,15 +133,16 @@ def main_evaluate_shift(exp_name, run, cp, sc=4):
 
 def main_evaluate_fsrcnn_longrun(run=2, cp=49):
     resultlist = []
-    for d, s, m in zip([240, 240, 280],[64, 64, 64], [3, 2, 2]):
+    for d, s, m in zip([240, 240, 280], [64, 64, 64], [3, 2, 2]):
         name = 'FSRCNN_d{0:}_s{1:}_m{2:}'.format(d, s, m)
-        mse, psnr, bc_mse, bc_psnr = main(utils.get_save_path(name, exp_no=run, ep_no=cp, mode='validation'), 'validation')
-        mse_t, psnr_t, bc_mse_t, bc_psnr_t = main(utils.get_save_path(name, exp_no=run, ep_no=cp, mode='test'), 'test')
-        resultlist.append([d, s, m, run, mse, psnr, bc_mse, bc_psnr, mse_t, psnr_t, bc_mse_t, bc_psnr_t])
+        resultlist.append([d,s,m,run])
+        for mode in ['validation', 'test']:
+            savep = utils.get_save_path(name, exp_no=run, ep_no=cp, mode=mode)
+            resultlist[-1] += list(main(savep, mode))
     as_str = tabulate.tabulate(resultlist, headers=['d', 's', 'm', 'run', 'mse valid', 'psnr valid', 'bc_mse valid',
                                                     'bc_psnr valid', 'mse test', 'psnr test', 'bc_mse test',
                                                     'bc_psnr test'])
-    file = open('FSRCNN_eval_longrun.txt', 'w')
+    file = open('../results_keras/summaries/FSRCNN_eval_longrun.txt', 'w')
     file.write(as_str)
     file.close()
 
@@ -162,15 +155,16 @@ def main_evaluate_unets():
                 deconv=True
                 name = 'Unet_nl{0:}_nc{1:}_nf{2:}_dc{3:}'.format(n_l, n_c, n_f, int(deconv))
                 run = 0
+                resultlist.append([n_l, n_f, n_c, run])
+                for mode in ['validation', 'test']:
+                    savep = utils.get_save_path(name, exp_no=run, ep_no=cp, mode=mode)
+                    resultlist[-1]+= list(main(savep, mode))
                 mse, psnr, bc_mse, bc_psnr = main(utils.get_save_path(name, exp_no=run, ep_no=49, mode='validation'),
                                                   'validation')
-                mse_t, psnr_t, bc_mse_t, bc_psnr_t = main(utils.get_save_path(name, exp_no=run, ep_no=49, mode='test'), 'test')
-                resultlist.append([n_l, n_f, n_c, int(deconv), run, mse, psnr, bc_mse, bc_psnr, mse_t, psnr_t, bc_mse_t,
-                                   bc_psnr_t])
-    as_str = tabulate.tabulate(resultlist, headers=['num_levels', 'start_num_filters', 'num_convs', 'deconv', 'run',
+    as_str = tabulate.tabulate(resultlist, headers=['num_levels', 'start_num_filters', 'num_convs', 'run',
                                                     'mse valid', 'psnr valid', 'bc_mse valid', 'bc_psnr valid',
                                                     'mse test', 'psnr test', 'bc_mse test', 'bc_psnr test'])
-    file = open('Unet_eval.txt', 'w')
+    file = open('../results_keras/summaries/Unet_eval.txt', 'w')
     file.write(as_str)
     file.close()
 
@@ -178,9 +172,10 @@ def main_evaluate_unets():
 def main_evaluate_checkpoints(name='FSRCNN_d{0:}_s{1:}_m{2:}'.format(240, 64, 3), run=2):
     resultlist = []
     for cp in range(1, 50):
-        mse, psnr, bc_mse, bc_psnr = main(utils.get_save_path(name, exp_no=run, ep_no=cp, mode='validation'), 'validation')
-        mse_t, psnr_t, bc_mse_t, bc_psnr_t = main(utils.get_save_path(name, exp_no=run, ep_no=cp, mode='test'), 'test')
-        resultlist.append([cp, mse, psnr, bc_mse, bc_psnr, mse_t, psnr_t,bc_mse_t, bc_psnr_t])
+        resultlist.append([cp])
+        for mode in ['validation', 'test']:
+            savep = utils.get_save_path(name, exp_no=run, ep_no=cp)
+            resultlist[-1] += main(savep, mode)
     as_str = tabulate.tabulate(resultlist, headers=['it', 'mse valid', 'psnr valid', 'bc_mse valid', 'bc_psnr valid',
                                                     'mse test', 'psnr test', 'bc_mse test', 'bc_psnr_test'])
 
