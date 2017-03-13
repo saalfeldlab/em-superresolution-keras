@@ -24,8 +24,8 @@ def get_save_path(exp_name, exp_no, ep_no, mode='validation', add=''):
         ep_no) + '_'+add+'.h5'
 
 
-def get_data_path(mode):
-    return '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16iso/'+mode+'.h5'
+def get_data_path(mode, resolution=16):
+    return '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-{0:d}iso/'.format(resolution)+mode+'.h5'
 
 
 def fix_prelu_json_files(run, exp_name=None):

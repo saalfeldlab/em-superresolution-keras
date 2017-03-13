@@ -88,7 +88,7 @@ def h5_data_generator_same(train_h5path, io_shape=(100,100,100), bs=1):
         for k in range(bs):
             train_ds.read_direct(batch, np.s_[x_start[k]: x_start[k] + io_shape[0],
                                               y_start[k]: y_start[k] + io_shape[1],
-                                              z_start[k]: z_start[k] + io_shape[2], 0],
+                                              z_start[k]: z_start[k] + io_shape[2]],
                                  np.s_[:, :, :,  k])
         if K.image_dim_ordering() == 'tf':
             batch = np.swapaxes(np.expand_dims(batch, 0), 0, 4)/255.
@@ -138,8 +138,8 @@ def train(exp_name=None, d=None, s=None, m=None, lr=10 ** (-5), n_l=None, n_f=No
     """training routine for an upscaling network"""
 
     start = time.time()
-    train_h5path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16iso/training.h5'
-    valid_h5path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16iso/validation.h5'
+    train_h5path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-10iso/training.h5'
+    valid_h5path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-10iso/validation.h5'
     mycnnspecs = CNNspecs(model_type=arch, n_levels=n_l, n_convs=n_c, n_fmaps=n_f, d=d, s=s, m=m)
     gt_model = learn_from_groundtruth((64, 64, 16), mycnnspecs, lr)
 
@@ -195,15 +195,15 @@ def print_model_summary(exp_name=None, d=None, s=None, m=None, lr=10 ** (-5), n_
                         arch='UNet', **kwargs):
     """instead of training just print the model summary (allows the same inputs as train()) for convenience"""
     mycnnspecs = CNNspecs(model_type=arch, n_levels=n_l, n_convs=n_c, n_fmaps=n_f, d=d, s=s, m=m)
-    gt_model = learn_from_groundtruth((64,64,16), mycnnspecs, lr)
+    gt_model = learn_from_groundtruth((64, 64, 16), mycnnspecs, lr)
 
 
 def unet_training():
-    n_l = 2 # 4 3 2
-    n_f = 32 # 64 32
+    n_l = 4 # 4 3 2
+    n_f = 64 # 64 32
     n_c = 2  # 3 2
     lrexp = -4# -4 -5 -6 -7
-    name = 'test_nl{0:}_nc{1:}_nf{2:}'.format(n_l, n_c, n_f)
+    name = 'unet_nl{0:}_nc{1:}_nf{2:}'.format(n_l, n_c, n_f)
     train(name, n_l=n_l, n_c=n_c, n_f=n_f, lr=10 ** lrexp, arch="UNet", epoch_sessions=44)
 
 
@@ -211,11 +211,11 @@ def fsrcnn_training():
     d = 280 # 240 280
     s = 64  # 48 64
     m = 4  # 2 3 4
-    name = 'test_d{0:}_s{1:}_m{2:}'.format(d, s, m)
-    print_model_summary(name, d=d, s=s, m=m, lr=10 ** (-5), arch="FSRCNN", epoch_sessions=3, saving_interval=1)
+    name = 'FSRCNN_d{0:}_s{1:}_m{2:}_100h'.format(d, s, m)
+    train(name, d=d, s=s, m=m, lr=10 ** (-5), arch="FSRCNN", epoch_sessions=111, saving_interval=22)
 
 
 if __name__ == '__main__':
-    #unet_training()
-    fsrcnn_training()
+    unet_training()
+    #fsrcnn_training()
     #print_model_summary()

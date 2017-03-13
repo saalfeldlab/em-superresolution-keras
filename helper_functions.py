@@ -28,7 +28,7 @@ def init_downscale_model(input_size, sc, get_output_shape=False):
 def h5_from_tiffs(downsample_factor=(2,2,8), percentage_test=30):
     path = '/nrs/saalfeld/hanslovskyp/CutOn4-15-2013_ImagedOn1-27-2014/aligned/substacks/' \
            '1300-3449/4000x2500+5172+1416/20151031_004930/out/04/render/'
-    h5_path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5/'
+    h5_path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-8iso/'
     h5_file_train = 'training.h5'
     h5_file_validation = 'validation.h5'
     file_format = '{:04d}.tif'
@@ -49,13 +49,13 @@ def h5_from_tiffs(downsample_factor=(2,2,8), percentage_test=30):
 
     print dim_xy, dim_z_max
 
-    train_array = np.zeros(init_downscale_model((dim_x_train, dim_xy[1], dim_z_max,1), downsample_factor,
-                                                get_output_shape=True))
-    valid_array = np.zeros(init_downscale_model((dim_x_test, dim_xy[1], dim_z_max, 1), downsample_factor,
-                                                get_output_shape=True))
-    train_model = init_downscale_model(input_size=(dim_x_train, dim_xy[1], downsample_factor[-1], 1),
+    train_array = np.squeeze(np.zeros(init_downscale_model((1, dim_x_train, dim_xy[1], dim_z_max), downsample_factor,
+                                      get_output_shape=True)))
+    valid_array = np.squeeze(np.zeros(init_downscale_model((1, dim_x_test, dim_xy[1], dim_z_max), downsample_factor,
+                                      get_output_shape=True)))
+    train_model = init_downscale_model(input_size=(1, dim_x_train, dim_xy[1], downsample_factor[-1]),
                                        sc=downsample_factor)
-    valid_model = init_downscale_model(input_size=(dim_x_test, dim_xy[1], downsample_factor[-1], 1),
+    valid_model = init_downscale_model(input_size=(1, dim_x_test, dim_xy[1], downsample_factor[-1]),
                                        sc=downsample_factor)
 
     i = 0
@@ -65,19 +65,19 @@ def h5_from_tiffs(downsample_factor=(2,2,8), percentage_test=30):
         for k in range(downsample_factor[-1]):
             imarray[:, :, k] = Image.open(path+file_format.format(i))
             i += 1
-
-        train_array[:, :, i/downsample_factor[2]-1, :] = \
-            np.squeeze(train_model.predict(imarray[np.newaxis, :dim_x_train, :, :, np.newaxis]), axis=(0,-1))
-        valid_array[:, :, i/downsample_factor[2]-1, :] = np.squeeze(valid_model.predict(imarray[np.newaxis,
-                                                                                      dim_x_train:dim_x_max, :, :,
-                                                                                      np.newaxis]), axis=(0, -1))
+        train_model.predict(imarray[np.newaxis, np.newaxis, :dim_x_train, :, :])
+        train_array[:, :, i/downsample_factor[2]-1] = \
+            np.squeeze(train_model.predict(imarray[np.newaxis, np.newaxis, :dim_x_train, :, :]))
+        valid_array[:,:, i/downsample_factor[2]-1] = np.squeeze(valid_model.predict(imarray[np.newaxis,
+                                                                                          np.newaxis,
+                                                                                      dim_x_train:dim_x_max, :, :]))
     h5f_train = h5py.File(h5_path+h5_file_train, 'w-')
-    h5f_train.create_dataset('raw', data= train_array)
+    h5f_train.create_dataset('raw', data=train_array)
     h5f_train.close()
     h5f_valid = h5py.File(h5_path+h5_file_validation, 'w-')
-    h5f_valid.create_dataset('raw', data = valid_array)
+    h5f_valid.create_dataset('raw', data=valid_array)
     h5f_valid.close()
     del train_array
 
 if __name__ == '__main__':
-    h5_from_tiffs()
+    h5_from_tiffs((1, 1, 4))
