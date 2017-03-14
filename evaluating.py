@@ -43,10 +43,6 @@ class Evaluator:
                             coord[2]-inp[2]/2:coord[2]+(inp[2]+1)/2]
 
         self.data.read_direct(patch, coord_slice, np.s_[:, :, :])
-        #if K.image_dim_ordering() == 'tf':
-        #    patch = np.swapaxes(np.expand_dims(patch, 0), 0, 4)/255.
-        #else:
-        #    patch = np.transpose(np.expand_dims(patch, -1), (3, 4, 0, 1, 2))/255.
         return patch
 
     def test_data_generator(self, ignore_border, bs, safety_margin=(0, 0)):
@@ -65,7 +61,7 @@ class Evaluator:
             overlap_to_last = o_shape[0] - 2*ignore_border[0] - (z_extra-z_last)
             z_extra = [int(z_extra - (self.sc - overlap_to_last%self.sc))]
 
-        batch = np.zeros(self.model.input_shape[spatial_slice]+(bs,))
+        batch = np.zeros((bs,)+self.model.input_shape[spatial_slice])
         k = 0
         l = 0
 
@@ -78,39 +74,27 @@ class Evaluator:
                         x_extra:
                     print('.', end='')
 
-                    batch[:, :, :, k] = self.get_patch((x, y, z))
+                    batch[k, :, :, :] = self.get_patch((z, y, x))
+
                     if k == bs-1:
                         if K.image_dim_ordering() == 'tf':
-                            batch = np.swapaxes(np.expand_dims(batch, 0), 0, 4)
+                            batch = np.expand_dims(batch,-1)
                         else:
-                            batch = np.transpose(np.expand_dims(batch, -1), (3, 4, 0, 1, 2))
+                            batch = np.expand_dims(batch,1)
                         l += 1
-
                         yield batch
                         k = 0
-                        batch = np.zeros(self.model.input_shape[spatial_slice]+(bs,))
+                        batch = np.zeros((bs,)+self.model.input_shape[spatial_slice])
                     else:
                         k += 1
                 print('\n')
 
-        batch = batch[:, :, :, :k]
+        batch = batch[:k,:, :, :]
         if K.image_dim_ordering() == 'tf':
-            batch = np.swapaxes(np.expand_dims(batch, 0), 0, 4)
+            batch = np.expand_dims(batch, -1)
         else:
-            batch = np.transpose(np.expand_dims(batch, -1), (3, 4, 0, 1, 2))
-        l += 1
-        print(l)
+            batch = np.expand_dims(batch, 1)
         yield batch
-        while True:
-            l += 1
-            print('justzeros',l)
-            if K.image_dim_ordering()=='tf':
-                yield np.zeros((bs,) + self.model.input_shape[spatial_slice] + (1,))
-            else:
-
-                batch = np.zeros((bs,1,)+self.model.input_shape[spatial_slice])
-                yield batch
-                #yield np.zeros((bs, 1,)+self.model.input_shape[spatial_slice])
 
     def parallel_coordinates_generator(self, ignore_border, safety_margin=(0, 0)):
         """generates the coordinates in the same order as test_data_generator (necessary because keras doesn't allow
@@ -129,13 +113,13 @@ class Evaluator:
                            o_shape[0] - 2*ignore_border[0])[-1]
 
             overlap_to_last = o_shape[0] - 2 * ignore_border[0]-(z_extra-z_last)
-            z_extra = [z_extra-(self.sc-overlap_to_last % self.sc)]
+            z_extra = [int(z_extra-(self.sc-overlap_to_last % self.sc))]
         print(x_extra, y_extra, z_extra)
         time.sleep(5)
         k = 1
         #x last
         for z in range(safety_margin[0] + o_shape[0]/2, self.data.shape[0] - o_shape[0]/2 - safety_margin[1],
-                       o_shape[0] - 2 *ignore_border[0]) + z_extra:
+                       o_shape[0] - 2 * ignore_border[0]) + z_extra:
             for y in range(o_shape[1]/2, self.data.shape[1] - o_shape[1]/2, o_shape[1]-2*ignore_border[1]) + y_extra:
                 for x in range(o_shape[2]/2, self.data.shape[2] - o_shape[2]/2, o_shape[2] - 2*ignore_border[2]) + \
                         x_extra:
@@ -192,10 +176,8 @@ class Evaluator:
             raise ValueError('The shape of inner_cube is not valid')
         else:
             ignore_border = tuple([int(ib) for ib in ignore_border])
-        print(ignore_border)
-        #self.prepare_output_file(self.data.shape[:-1])
-        predict = np.zeros(self.data.shape)
-        self.output_file = h5py.File(self.save_path, 'w-')
+        self.prepare_output_file(self.data.shape)
+
         batch_generator = self.test_data_generator(ignore_border, bs, safety_margin=safety_margin)
         corresponding_coords_generator, counter = itertools.tee(self.parallel_coordinates_generator(ignore_border,
                                                                                                     safety_margin))
@@ -203,16 +185,19 @@ class Evaluator:
         for num_coords_to_process, _ in counter:
             pass
         print("NUM PROCESS", num_coords_to_process)
-        chunk_of_predictions = self.model.predict_generator(batch_generator, val_samples=num_coords_to_process)
+        for batch in batch_generator:
+            pred_batch = self.model.predict_on_batch(batch)
+            for sample, (processed_examples, coord) in zip(pred_batch, corresponding_coords_generator):
+                self.output_file['raw'].write_direct(sample, np.s_[0, ignore_border[0]: -ignore_border[0],
+                                                                   ignore_border[1]: -ignore_border[1],
+                                                                   ignore_border[2]:-ignore_border[2]],
+                                                     np.s_[coord[0]-(sample.shape[1]-2*ignore_border[0]) / 2:
+                                                            coord[0] + (sample.shape[1] - 2*ignore_border[0] + 1) / 2,
+                                                           coord[1] - (sample.shape[2] - 2*ignore_border[1]) / 2:
+                                                            coord[1] + (sample.shape[2] - 2*ignore_border[1] + 1) / 2,
+                                                           coord[2] - (sample.shape[3] - 2*ignore_border[2]) / 2:
+                                                            coord[2] + (sample.shape[3] - 2*ignore_border[2] + 1) / 2])
 
-        for (processed_examples, coord), pred in zip(corresponding_coords_generator, chunk_of_predictions):
-            pred = pred[0, ignore_border[0]: -ignore_border[0], ignore_border[1]: -ignore_border[1],
-                        ignore_border[2]: -ignore_border[2]]
-            predict[coord[0] - pred.shape[0]/2: coord[0] + (pred.shape[0] + 1)/2,
-                    coord[1] - pred.shape[1]/2: coord[1] + (pred.shape[1] + 1)/2,
-                    coord[2] - pred.shape[2]/2: coord[2] + (pred.shape[2] + 1)/2] = pred
-
-        self.output_file.create_dataset('raw', data=predict)
         self.output_file.close()
 
 
@@ -243,7 +228,7 @@ def fsrcnn_hyperparameter_evaluation(ep_no=12):
                     run_evaluation('FSRCNN_d{0:}_s{1:}_m{2:}'.format(d, s, m), run, ep_no)
 
 
-def evaluate_per_saved_epoch(max_epoch, exp_name, run, ep_no, inner_cube=(24, 48,48), bs=6):
+def evaluate_per_saved_epoch(max_epoch, exp_name, run, ep_no, inner_cube=(24, 48, 48), bs=6):
     for no in range(1, max_epoch):
         run_evaluation(exp_name, run, ep_no, inner_cube=inner_cube, bs=bs)
 
@@ -254,6 +239,8 @@ if __name__ == '__main__':
     #FSRCNN_evaluation()
 
     #evaluate_whole_run()
-
-    shifted_evaluation('Unet_nl4_nc2_nf64_dc1', 0, 49)
+    simple_eval = Evaluator(utils.get_model_path('FSRCNN_d280_s64_m2', 0, 12), 'test_direct.h5',
+                            '/groups/saalfeld/saalfeldlab/larissa/cremi/A_downscaled_times4.crop.h5')
+    simple_eval.run_full_evaluation(inner_cube=(24,48,48), bs=6)
+    #shifted_evaluation('Unet_nl4_nc2_nf64_dc1', 0, 49)
     # main()
