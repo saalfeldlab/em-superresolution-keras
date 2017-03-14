@@ -31,7 +31,6 @@ def learn_from_groundtruth(input_shape, my_specs, lr):
 
 
 #def build_training_scheme(input_shape, cnn_model_specs, sc):
-#    #todo: comment out
 #    def add_downscaling_layer(in_layer, sc=4):
 #        return AveragePooling3D(pool_size=(1, 1, sc), strides=(1, 1, sc), border_mode='valid')(in_layer)
 #
@@ -61,4 +60,4 @@ def learn_from_groundtruth(input_shape, my_specs, lr):
 
 if __name__ == '__main__':
     mycnnspecs =CNN_models.CNNspecs(model_type='U-Net')
-    learn_from_groundtruth((106, 106, 100), mycnnspecs)
+    learn_from_groundtruth((100, 106, 106), mycnnspecs)

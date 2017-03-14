@@ -71,7 +71,7 @@ def downscale_manually(arr, factor=4.):
 
     avg_array = np.zeros(down_shape)
     for k in range(int(factor)):
-        avg_array += arr[...,k::factor]
+        avg_array += arr[k::factor,...]
     return avg_array/factor
 
 

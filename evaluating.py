@@ -52,29 +52,31 @@ class Evaluator:
     def test_data_generator(self, ignore_border, bs, safety_margin=(0, 0)):
         """generates data as required by keras"""
         o_shape = self.model.output_shape[spatial_slice]
-        border_remainder = (np.array(self.data.shape)-np.array([0, 0, safety_margin[0] + safety_margin[1]]) -
+        border_remainder = (np.array(self.data.shape)-np.array([safety_margin[0] + safety_margin[1], 0, 0]) -
                             2*np.array(ignore_border)) % (np.array(o_shape) - 2*np.array(ignore_border))
-        x_extra = [] if border_remainder[0] == 0 else [int(self.data.shape[0] - o_shape[0]/2)]
+        x_extra = [] if border_remainder[2] == 0 else [int(self.data.shape[2] - o_shape[2]/2)]
         y_extra = [] if border_remainder[1] == 0 else [int(self.data.shape[1] - o_shape[1]/2)]
-        if border_remainder[2] == 0:
+        if border_remainder[0] == 0:
             z_extra = []
         else:
-            z_extra = self.data.shape[2] - o_shape[2]/2 - safety_margin[1]
-            z_last = range(safety_margin[0] + o_shape[2]/2, self.data.shape[2] - o_shape[2]/2 - safety_margin[1],
-                           o_shape[2] - 2*ignore_border[2])[-1]
-            overlap_to_last = o_shape[2] - 2*ignore_border[2] - (z_extra-z_last)
+            z_extra = self.data.shape[0] - o_shape[0]/2 - safety_margin[1]
+            z_last = range(safety_margin[0] + o_shape[0]/2, self.data.shape[0] - o_shape[0]/2 - safety_margin[1],
+                           o_shape[0] - 2*ignore_border[0])[-1]
+            overlap_to_last = o_shape[0] - 2*ignore_border[0] - (z_extra-z_last)
             z_extra = [int(z_extra - (self.sc - overlap_to_last%self.sc))]
 
         batch = np.zeros(self.model.input_shape[spatial_slice]+(bs,))
         k = 0
         l = 0
-        for x in range(o_shape[0]/2, self.data.shape[0] - o_shape[0]/2, o_shape[0] - 2*ignore_border[0]) + x_extra:
-            print('\nx', x)
+
+        for z in range(safety_margin[0] + o_shape[0]/2, self.data.shape[0] - o_shape[0]/2 - safety_margin[1],
+                       o_shape[0] - 2*ignore_border[0]) + z_extra:
+            print('\nz', z)
             for y in range(o_shape[1]/2, self.data.shape[1] - o_shape[1]/2, o_shape[1] - 2*ignore_border[1]) + y_extra:
                 print('\ny', y)
-                for z in range(safety_margin[0] + o_shape[2]/2, self.data.shape[2] - o_shape[2]/2 - safety_margin[1],
-                               o_shape[2] - 2*ignore_border[2]) + z_extra:
-                    print('.', z, end='')
+                for x in range(o_shape[2]/2, self.data.shape[2] - o_shape[2]/2, o_shape[2] - 2*ignore_border[2]) + \
+                        x_extra:
+                    print('.', end='')
 
                     batch[:, :, :, k] = self.get_patch((x, y, z))
                     if k == bs-1:
@@ -115,27 +117,29 @@ class Evaluator:
         for additional outputs of the generator)"""
         # with enumerate
         o_shape = self.model.output_shape[spatial_slice]
-        border_remainder = (np.array(self.data.shape)-np.array([0, 0, safety_margin[0]+safety_margin[1]]) -
+        border_remainder = (np.array(self.data.shape)-np.array([safety_margin[0]+safety_margin[1], 0, 0]) -
                             2*np.array(ignore_border)) % (np.array(o_shape)-2*np.array(ignore_border))
-        x_extra = [] if border_remainder[0] == 0 else [self.data.shape[0] - o_shape[0] / 2]
+        x_extra = [] if border_remainder[2] == 0 else [self.data.shape[2] - o_shape[2] / 2]
         y_extra = [] if border_remainder[1] == 0 else [self.data.shape[1] - o_shape[1] / 2]
-        if border_remainder[2] == 0:
+        if border_remainder[0] == 0:
             z_extra = []
         else:
-            z_extra = self.data.shape[2]-o_shape[2]/2 - safety_margin[1]
-            z_last = range(safety_margin[0] + o_shape[2]/2, self.data.shape[2] - o_shape[2] / 2 - safety_margin[1],
-                           o_shape[2] - 2*ignore_border[2])[-1]
+            z_extra = self.data.shape[0]-o_shape[0]/2 - safety_margin[1]
+            z_last = range(safety_margin[0] + o_shape[0]/2, self.data.shape[0] - o_shape[0] / 2 - safety_margin[1],
+                           o_shape[0] - 2*ignore_border[0])[-1]
 
-            overlap_to_last = o_shape[2] - 2 * ignore_border[2]-(z_extra-z_last)
-            z_extra = [z_extra-(4-overlap_to_last % 4)]
+            overlap_to_last = o_shape[0] - 2 * ignore_border[0]-(z_extra-z_last)
+            z_extra = [z_extra-(self.sc-overlap_to_last % self.sc)]
         print(x_extra, y_extra, z_extra)
         time.sleep(5)
         k = 1
-        for x in range(o_shape[0]/2, self.data.shape[0] - o_shape[0]/2, o_shape[0] - 2*ignore_border[0]) + x_extra:
-            for y in range(o_shape[1]/2, self.data.shape[1] - o_shape[1]/2, o_shape[1] - 2*ignore_border[1]) + y_extra:
-                for z in range(safety_margin[0] + o_shape[2]/2, self.data.shape[2] - o_shape[2]/2 - safety_margin[1],
-                               o_shape[2] - 2*ignore_border[2]) + z_extra:
-                    yield k, (x, y, z)
+        #x last
+        for z in range(safety_margin[0] + o_shape[0]/2, self.data.shape[0] - o_shape[0]/2 - safety_margin[1],
+                       o_shape[0] - 2 *ignore_border[0]) + z_extra:
+            for y in range(o_shape[1]/2, self.data.shape[1] - o_shape[1]/2, o_shape[1]-2*ignore_border[1]) + y_extra:
+                for x in range(o_shape[2]/2, self.data.shape[2] - o_shape[2]/2, o_shape[2] - 2*ignore_border[2]) + \
+                        x_extra:
+                    yield k, (z, y, x)
                     k += 1
 
     def load_model(self, json_file=None):
@@ -219,10 +223,10 @@ def shifted_evaluation(exp_name, run, cp, resolution=16):
         for shift in range(int(shifted_evaluator.sc)):
             savep = utils.get_save_path(exp_name, exp_no=run, ep_no=cp, mode=mode, add='_shift'+str(shift))
             shifted_evaluator.reset_save_path(savep)
-            shifted_evaluator.run_full_evaluation(inner_cube=(48,48,24), bs=6, safety_margin=(shift, -shift))
+            shifted_evaluator.run_full_evaluation(inner_cube=(24,48,48), bs=6, safety_margin=(shift, -shift))
 
 
-def run_evaluation(exp_name, run, ep_no, inner_cube=(48, 48, 24), bs=6, resolution=16):
+def run_evaluation(exp_name, run, ep_no, inner_cube=(24, 48, 48), bs=6, resolution=16):
     for mode in ['validation', 'test']:
         modelp = utils.get_model_path(exp_name, exp_no=run, ep_no=ep_no)
         savep = utils.get_save_path(exp_name, exp_no=run, ep_no=ep_no,
@@ -239,7 +243,7 @@ def fsrcnn_hyperparameter_evaluation(ep_no=12):
                     run_evaluation('FSRCNN_d{0:}_s{1:}_m{2:}'.format(d, s, m), run, ep_no)
 
 
-def evaluate_per_saved_epoch(max_epoch, exp_name, run, ep_no, inner_cube=(48,48,24), bs=6):
+def evaluate_per_saved_epoch(max_epoch, exp_name, run, ep_no, inner_cube=(24, 48,48), bs=6):
     for no in range(1, max_epoch):
         run_evaluation(exp_name, run, ep_no, inner_cube=inner_cube, bs=bs)
 

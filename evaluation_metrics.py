@@ -18,14 +18,14 @@ def se_arr(arr1, arr2):
 
 def evaluate_per_slice(error_arr):
     per_slice_error = []
-    for k in range(error_arr.shape[2]):
-        per_slice_error.append(np.sum(error_arr[:, :, k])/error_arr[:, :, k].size)
+    for k in range(error_arr.shape[0]):
+        per_slice_error.append(np.sum(error_arr[k, :, :])/error_arr[k, :, :].size)
     return per_slice_error
 
 
-def run_eval(groundtruth, prediction):
-    downscaled = utils.downscale_manually(groundtruth, 4.)
-    bicubic = utils.bicubic_up(downscaled, 4., -1)
+def run_eval(groundtruth, prediction, sc = 4.):
+    downscaled = utils.downscale_manually(groundtruth, sc)
+    bicubic = utils.bicubic_up(downscaled, sc, 0)
     prediction, [groundtruth, bicubic] = utils.cut_to_same_size(prediction, [groundtruth, bicubic])
     assert prediction.shape == groundtruth.shape
     assert prediction.shape == bicubic.shape
@@ -45,7 +45,7 @@ def run_eval(groundtruth, prediction):
 
 def run_per_slice_eval(groundtruth, prediction, avg=True, sc=4.):
     downscaled = utils.downscale_manually(groundtruth, sc)
-    bicubic = utils.bicubic_up(downscaled, sc, -1)
+    bicubic = utils.bicubic_up(downscaled, sc, 0)
     prediction, [groundtruth, bicubic] = utils.cut_to_same_size(prediction, [groundtruth, bicubic])
     raw_error_arr = se_arr(prediction, groundtruth)
     bicubic_weighting = se_arr(bicubic, groundtruth)
@@ -63,16 +63,16 @@ def run_per_slice_eval(groundtruth, prediction, avg=True, sc=4.):
     plt.show()
 
 
-def bicubic_main(mode='validation'):
+def bicubic_main(mode='validation', sc = 4.):
     filename = utils.get_save_path('FSRCNN_d{0:}_s{1:}_m{2:}'.format(240, 64, 2), exp_no=2, ep_no=49, mode=mode)
     prediction = np.array(h5py.File(filename, 'r')['raw'])
     gt = np.array(
         h5py.File('/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16iso/'+mode+'.h5', 'r')[
             'raw']) / 255.
     gt= np.squeeze(gt)
-    downscaled = utils.downscale_manually(gt, 4.)
+    downscaled = utils.downscale_manually(gt, sc)
 
-    bicubic = utils.bicubic_up(downscaled, 4., -1)
+    bicubic = utils.bicubic_up(downscaled, sc, 0)
     prediction, [bicubic] = utils.cut_to_same_size(prediction, [bicubic])
     mse, psnr, bicubic_weighted_mse, bicubic_weighted_psnr = run_eval(gt, bicubic)
     return mse, psnr, bicubic_weighted_mse, bicubic_weighted_psnr
@@ -147,7 +147,7 @@ def main_evaluate_fsrcnn_longrun(run=2, cp=49):
     file.close()
 
 
-def main_evaluate_unets():
+def main_evaluate_unets(cp= 49):
     resultlist = []
     for n_l in [4, 3, 2]:
         for n_f in [64, 32]:
@@ -159,8 +159,7 @@ def main_evaluate_unets():
                 for mode in ['validation', 'test']:
                     savep = utils.get_save_path(name, exp_no=run, ep_no=cp, mode=mode)
                     resultlist[-1]+= list(main(savep, mode))
-                mse, psnr, bc_mse, bc_psnr = main(utils.get_save_path(name, exp_no=run, ep_no=49, mode='validation'),
-                                                  'validation')
+
     as_str = tabulate.tabulate(resultlist, headers=['num_levels', 'start_num_filters', 'num_convs', 'run',
                                                     'mse valid', 'psnr valid', 'bc_mse valid', 'bc_psnr valid',
                                                     'mse test', 'psnr test', 'bc_mse test', 'bc_psnr test'])

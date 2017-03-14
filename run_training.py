@@ -81,14 +81,14 @@ def h5_data_generator_same(train_h5path, io_shape=(100,100,100), bs=1):
 
     while True:
         batch = np.empty(io_shape+(bs,))
-        x_start = np.random.random_integers(0, train_ds.shape[0]-io_shape[0]-1, bs)
+        z_start = np.random.random_integers(0, train_ds.shape[0]-io_shape[0]-1, bs)
         y_start = np.random.random_integers(0, train_ds.shape[1]-io_shape[1]-1, bs)
-        z_start = np.random.random_integers(0, train_ds.shape[2]-io_shape[2]-1, bs)
+        x_start = np.random.random_integers(0, train_ds.shape[2]-io_shape[2]-1, bs)
 
         for k in range(bs):
-            train_ds.read_direct(batch, np.s_[x_start[k]: x_start[k] + io_shape[0],
+            train_ds.read_direct(batch, np.s_[z_start[k]: z_start[k] + io_shape[0],
                                               y_start[k]: y_start[k] + io_shape[1],
-                                              z_start[k]: z_start[k] + io_shape[2]],
+                                              x_start[k]: x_start[k] + io_shape[2]],
                                  np.s_[:, :, :,  k])
         if K.image_dim_ordering() == 'tf':
             batch = np.swapaxes(np.expand_dims(batch, 0), 0, 4)/255.
@@ -99,7 +99,7 @@ def h5_data_generator_same(train_h5path, io_shape=(100,100,100), bs=1):
         yield (batch, gt)
 
 
-def h5_data_generator(train_h5path, input_shape=(106,106,100), output_shape=(4,4,4), bs=10):
+def h5_data_generator(train_h5path, input_shape=(100, 106,106), output_shape=(4,4,4), bs=10):
     """data generator for getting random coordinates from h5 file but moving in intervals of output_shape (i.e. no
     overlap of output)"""
     train_ds = h5py.File(train_h5path, 'r')['raw']
@@ -111,13 +111,13 @@ def h5_data_generator(train_h5path, input_shape=(106,106,100), output_shape=(4,4
     print tds_dims * 4
     while True:
         batch = np.empty(input_shape+(bs,))
-        x_start = np.random.random_integers(0, tds_dims[0]-input_shape[0]//output_shape[0]-1, bs)
+        z_start = np.random.random_integers(0, tds_dims[0]-input_shape[0]//output_shape[0]-1, bs)
         y_start = np.random.random_integers(0, tds_dims[1]-input_shape[1]//output_shape[1]-1, bs)
-        z_start = np.random.random_integers(0, tds_dims[2]-input_shape[2]//output_shape[2]-1, bs)
+        x_start = np.random.random_integers(0, tds_dims[2]-input_shape[2]//output_shape[2]-1, bs)
         for k in range(bs):
-            train_ds.read_direct(batch, np.s_[x_start[k]*output_shape[0]:x_start[k]*output_shape[0]+input_shape[0],
+            train_ds.read_direct(batch, np.s_[z_start[k]*output_shape[0]:z_start[k]*output_shape[0]+input_shape[0],
                                               y_start[k]*output_shape[1]:y_start[k]*output_shape[1]+input_shape[1],
-                                              z_start[k]*output_shape[2]:z_start[k]*output_shape[2]+input_shape[2], 0],
+                                              x_start[k]*output_shape[2]:x_start[k]*output_shape[2]+input_shape[2], 0],
                                  np.s_[:, :, :, k])
         if K.image_dim_ordering() == 'tf':
             batch = (np.swapaxes(np.expand_dims(batch, 0), 0, 4)/255.)
@@ -141,7 +141,7 @@ def train(exp_name=None, d=None, s=None, m=None, lr=10 ** (-5), n_l=None, n_f=No
     train_h5path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-10iso/training.h5'
     valid_h5path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-10iso/validation.h5'
     mycnnspecs = CNNspecs(model_type=arch, n_levels=n_l, n_convs=n_c, n_fmaps=n_f, d=d, s=s, m=m)
-    gt_model = learn_from_groundtruth((64, 64, 16), mycnnspecs, lr)
+    gt_model = learn_from_groundtruth((16, 64, 64), mycnnspecs, lr)
 
     saving_path = '../results_keras/'
     if exp_name == None:
@@ -161,14 +161,15 @@ def train(exp_name=None, d=None, s=None, m=None, lr=10 ** (-5), n_l=None, n_f=No
         json.dump(json_string, outfile)
 
     if K.image_dim_ordering() == 'tf':
-        input_xyz = gt_model.input_shape[1:-1]
-        output_xyz = gt_model.output_shape[1:-1]
+        input_zyx = gt_model.input_shape[1:-1]
+        output_zyx = gt_model.output_shape[1:-1]
     else:
-        input_xyz = gt_model.input_shape[2:]
-        output_xyz = gt_model.output_shape[2:]
+        input_zyx = gt_model.input_shape[2:]
+        output_zyx = gt_model.output_shape[2:]
 
-    mygen_train = h5_data_generator_same(train_h5path, io_shape=input_xyz, bs=bs)
-    mygen_valid = h5_data_generator_same(valid_h5path, io_shape=input_xyz, bs=bs)
+
+    mygen_train = h5_data_generator_same(train_h5path, io_shape=input_zyx, bs=bs)
+    mygen_valid = h5_data_generator_same(valid_h5path, io_shape=input_zyx, bs=bs)
 
     runlength = []
     training_only = []
@@ -195,7 +196,7 @@ def print_model_summary(exp_name=None, d=None, s=None, m=None, lr=10 ** (-5), n_
                         arch='UNet', **kwargs):
     """instead of training just print the model summary (allows the same inputs as train()) for convenience"""
     mycnnspecs = CNNspecs(model_type=arch, n_levels=n_l, n_convs=n_c, n_fmaps=n_f, d=d, s=s, m=m)
-    gt_model = learn_from_groundtruth((64, 64, 16), mycnnspecs, lr)
+    gt_model = learn_from_groundtruth((16, 64, 64), mycnnspecs, lr)
 
 
 def unet_training():
