@@ -65,13 +65,15 @@ def running_mean(arr, window):
     return mean_arr, std_arr
 
 
-def downscale_manually(arr, factor=4.):
+def downscale_manually(arr, factor=4., axis=0):
     down_shape = list(arr.shape)
     down_shape[-1] /= factor
 
     avg_array = np.zeros(down_shape)
     for k in range(int(factor)):
-        avg_array += arr[k::factor,...]
+        slicing = [np.s_[:]]*arr.ndim
+        slicing[axis] = np.s_[k::factor]
+        avg_array += arr[slicing]
     return avg_array/factor
 
 
