@@ -23,9 +23,9 @@ def evaluate_per_slice(error_arr):
     return per_slice_error
 
 
-def run_eval(groundtruth, prediction, sc = 4.):
-    downscaled = utils.downscale_manually(groundtruth, sc)
-    bicubic = utils.bicubic_up(downscaled, sc, 0)
+def run_eval(groundtruth, prediction, sc = 4., axis=0):
+    downscaled = utils.downscale_manually(groundtruth, sc, axis)
+    bicubic = utils.bicubic_up(downscaled, sc, axis)
     prediction, [groundtruth, bicubic] = utils.cut_to_same_size(prediction, [groundtruth, bicubic])
     assert prediction.shape == groundtruth.shape
     assert prediction.shape == bicubic.shape
