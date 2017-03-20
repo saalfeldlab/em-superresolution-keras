@@ -1,0 +1,33 @@
+#!/bin/bash
+# Wrapper around learnDictionary.py for use with run_script
+# 
+# See learnDictionary.py for parameter details.
+
+pyDir="/groups/saalfeld/home/bogovicj/dev/sr/em-superresolution-keras"
+
+source /groups/saalfeld/home/bogovicj/envbin/addAnaconda
+source activate spams
+
+outdir=$1
+shift
+
+echo "args $@"
+
+doIpo=0
+learnDict=1
+
+imgFn=${imgPath##*/}
+
+# record the code
+cp $pyDir/learnDictionary.py $outdir
+chmod 0444 $outdir/learnDictionary.py
+            
+
+dictOut="$outdir/dict.h5"
+echo " ########################## "
+echo " TRAINING "
+echo " ########################## "
+
+python $outdir/learnDictionary.py -o $dictOut $@
+
+echo " all done  "
