@@ -11,13 +11,13 @@ import numpy as np
 def learn_from_groundtruth(input_shape, my_specs, lr):
     """set up learning from groundtruth, i.e. downscale artificially and reconstruct the HR"""
     sc = my_specs.sc
-    input_shape_ch = tuple(np.array(input_shape) * np.array([1, 1, sc]))
+    input_shape_ch = tuple(np.array(input_shape) * np.array([sc, 1, 1]))
     if K.image_dim_ordering()=='tf':
         input_shape_ch = input_shape_ch + (1,)
     else:
         input_shape_ch = (1,) + input_shape_ch
     layers = [Input(shape=input_shape_ch)]
-    layers.append(AveragePooling3D(pool_size=(1, 1, sc), strides=(1, 1, sc), border_mode='valid')(layers[-1]))
+    layers.append(AveragePooling3D(pool_size=(sc, 1, 1), strides=(sc, 1, 1), border_mode='valid')(layers[-1]))
     if my_specs.model_type == 'unet' or my_specs.model_type == 'u-net':
         layers = CNN_models.upscaling_unet(my_specs, layers)
     elif my_specs.model_type == 'fsrcnn' or my_specs.model_type == 'sparsecoding':

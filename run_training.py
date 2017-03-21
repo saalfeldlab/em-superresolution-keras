@@ -140,7 +140,7 @@ def train(exp_name=None, d=None, s=None, m=None, lr=10 ** (-5), n_l=None, n_f=No
     start = time.time()
     train_h5path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-10iso/training.h5'
     valid_h5path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-10iso/validation.h5'
-    mycnnspecs = CNNspecs(model_type=arch, n_levels=n_l, n_convs=n_c, n_fmaps=n_f, d=d, s=s, m=m)
+    mycnnspecs = CNNspecs(model_type=arch, n_levels=n_l, n_convs=n_c, n_fmaps=dict(start=n_f,mult=2), d=d, s=s, m=m)
     gt_model = learn_from_groundtruth((16, 64, 64), mycnnspecs, lr)
 
     saving_path = '../results_keras/'
@@ -170,6 +170,7 @@ def train(exp_name=None, d=None, s=None, m=None, lr=10 ** (-5), n_l=None, n_f=No
 
     mygen_train = h5_data_generator_same(train_h5path, io_shape=input_zyx, bs=bs)
     mygen_valid = h5_data_generator_same(valid_h5path, io_shape=input_zyx, bs=bs)
+
 
     runlength = []
     training_only = []
@@ -217,6 +218,7 @@ def fsrcnn_training():
 
 
 if __name__ == '__main__':
-    unet_training()
+    #unet_training()
+    train('tester', n_l=3, n_c=2, n_f=64, lr=10**(-4), arch="UNet", epoch_sessions=2)
     #fsrcnn_training()
     #print_model_summary()

@@ -90,25 +90,27 @@ def upscaling_unet(my_specs, layers):
     kernel_size = my_specs.kernel_size
     merge_shapes = []
     merge_index = []
+
     if K.image_dim_ordering() == 'tf':
         spatial_slice = np.s_[1:-1]
     else:
         spatial_slice = np.s_[2:]
+
     for l in range(n_levels): #downstream
-        for n_f, ks in zip(n_fmaps[l], kernel_size[l]):
-            layers.append(Convolution3D(n_f, ks[0], ks[1]*sc+((ks[1]*sc)%2-1), (ks[2]*sc)%2-1,
+        for c_c, (n_f, ks) in enumerate(zip(n_fmaps[l], kernel_size[l])):
+            layers.append(Convolution3D(n_f, ks[0], ks[1]*sc+((ks[1]*sc)%2-1), ks[2]*sc+(ks[2]*sc)%2-1,
                                         init='he_normal', border_mode='same',
-                                        activation='relu')(layers[-1])
+                                        activation='relu', name='conv_downleg_l{0:}_{1:}'.format(l, c_c))(layers[-1])
                           )
         if l < n_levels - 1: #intermediate upsampling (doesn't happen for bottom)
             if sc >= 2:
                 pool_size = (1, 2, 2) # the later downsampling doesn't happen
                 layers.append(
                     Deconvolution3D(n_f, ks[0]*sc-1, ks[1]*sc-1, ks[2]*sc-1,
-                                    output_shape=(None,n_f,) + tuple(layers[-1].get_shape().as_list()[
-                                                                         spatial_slice]*np.array([sc,1,1])),
-                                    subsample=(sc,1,1),init='he_normal', border_mode='same',
-                                    activation='relu')(layers[-1]))
+                                    output_shape=(None, n_f,) + tuple(layers[-1].get_shape().as_list()[
+                                                                         spatial_slice]*np.array([sc, 1, 1])),
+                                    subsample=(sc, 1, 1),init='he_normal', border_mode='same',
+                                    activation='relu', name='transconv_downleg_l{0:}'.format(l))(layers[-1]))
 
                 last_layer_index=-2
                 sc /= 2
@@ -118,33 +120,38 @@ def upscaling_unet(my_specs, layers):
                 last_layer_index = -1
             merge_shapes.append(list(layers[-1].get_shape().as_list()[spatial_slice]))
             merge_index.append(len(layers)-1)
-            layers.append(MaxPooling3D(pool_size=pool_size, border_mode='same')(layers[last_layer_index]))
+            layers.append(MaxPooling3D(pool_size=pool_size, border_mode='same', name='maxpool_l{0:}'.format(l))(layers[
+                                                                                                   last_layer_index]))
+
     for l in range(n_levels-1)[::-1]:
         layers.append(Deconvolution3D(n_fmaps[l][0], kernel_size[l][-1][0], kernel_size[l][-1][1], kernel_size[l][
             -1][2], output_shape=(None, n_fmaps[l][0],) + tuple(layers[-1].get_shape().as_list()[spatial_slice] *
                                                                  np.array([2 * sc, 2, 2])),subsample=(2*sc, 2, 2),
-                                      init='he_normal', border_mode='same', activation='relu')(layers[-1]))
+                                      init='he_normal', border_mode='same', activation='relu',
+                                      name='transconv_upleg_l{0:}'.format(l))(layers[-1]))
         offset = np.array(merge_shapes[l]) - np.array(layers[-1].get_shape().as_list()[spatial_slice])
         if np.any(offset%2 != 0):
             warnings.warn('For seamless tiling you need to choose a different input shape or kernel size')
         layers.append(Cropping3D(cropping=((offset[0]/2, offset[0]/2), (offset[1]/2, offset[1]/2),
-                                           (offset[2]/2, offset[2]/2)))(layers[merge_index[l]]))
+                                           (offset[2]/2, offset[2]/2)),
+                                 name='cropping_l{0:}'.format(l))(layers[merge_index[l]]))
         if K.image_dim_ordering()=='tf':
             ch_axis = -1
         else:
             ch_axis = 1
-        layers.append(merge([layers[-1], layers[-2]], mode='concat', concat_axis=ch_axis))
+        layers.append(merge([layers[-1], layers[-2]], mode='concat', concat_axis=ch_axis,
+                            name='merging_l{0:}'.format(l)))
 
-        for n_f, ks in zip(n_fmaps[l], kernel_size[l]):
+        for c_c, (n_f, ks) in enumerate(zip(n_fmaps[l], kernel_size[l])):
             layers.append(Convolution3D(n_f, ks[0], ks[1], ks[2], init='he_normal', border_mode='same',
-                                        activation='relu')(layers[-1]))
-    layers.append(Convolution3D(1, 3, 3, 3, init='he_normal', border_mode='same')(layers[-1]))
+                                        activation='relu', name='conv_upleg_l{0:}_{1:}'.format(l, c_c))(layers[-1]))
+
+    layers.append(Convolution3D(1, 3, 3, 3, init='he_normal', border_mode='same', name='conv_final')(layers[-1]))
     return layers
 
 
 def gaussian_init(shape, name=None, dim_ordering=K.image_dim_ordering()):
     """alternative version of normal initializations which has a variable scale"""
-
     return keras.initializations.normal(shape, scale=0.001, name=name, dim_ordering=dim_ordering)
 
 
@@ -185,4 +192,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
