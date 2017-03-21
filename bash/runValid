@@ -9,4 +9,9 @@ validationIm="/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16iso/vali
 #python "$pyscript" -i "$validationIm" -d "$1" --image-internal-directory 'raw' -s "2-2-2" -b 20000
 #python "$pyscript" -i "$validationIm" -d "$1" --image-internal-directory 'raw' -b 4000
 #python "$pyscript" -i "$validationIm" -d "$1" --image-internal-directory 'raw' -b 6000 -s "6-6-6"
-python "$pyscript" -f 4 -i "$validationIm" -d "$1" --image-internal-directory 'raw' -b 6000 -s "4-4-4" 
+
+#python "$pyscript" -f 4 -i "$validationIm" -d "$1" --image-internal-directory 'raw' -b 6000 "$@"
+
+dict="$1"
+shift
+python "$pyscript" -f 4 -i "$validationIm" -d "$dict" --image-internal-directory 'raw' -b 6000 "$@"

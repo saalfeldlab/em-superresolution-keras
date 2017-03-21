@@ -3,6 +3,7 @@ import numpy as np
 import h5py
 import scipy
 import spams
+import time
 import scipy.ndimage.filters as sp
 from scipy.interpolate import interp1d 
 
@@ -64,7 +65,7 @@ def dictUpsampleImage( im, D, param, dsfactor, patchSize=None,
     if not stepSize==None:
         print( 'doing step size' )
         fill_sub_patch = True
-        offset = (np.array(patchSize) - np.array(stepSize))/2.
+        offset = np.floor( (np.array(patchSize) - np.array(stepSize)) / 2.) 
         slc = []
         for i in range( patchSize.size ):
             slc += [ slice( offset[i], offset[i] + stepSize[i] ) ]
@@ -86,6 +87,7 @@ def dictUpsampleImage( im, D, param, dsfactor, patchSize=None,
 
     patchSizeDown = np.array( patchSize ) / np.array( [ 1, 1, dsfactor ])
 
+    tic = time.time()
     imRecon = np.zeros( im.shape, dtype = im.dtype )
 
     # imds = downsamplePatch3dAvgZ( impad, dsfactor )
@@ -122,6 +124,9 @@ def dictUpsampleImage( im, D, param, dsfactor, patchSize=None,
                             y : y + patchSize[ 1 ],  
                             z : z + patchSize[ 2 ]] = Xre[:,j].reshape( patchSize )
 
+    toc = time.time()
+    t = toc - tic
+    print 'time to compute upsampling %f' % t
     return imRecon
 
 def downsamplePatchList( patchList, patchSize, factor, kind='avg' ):
