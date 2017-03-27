@@ -10,8 +10,8 @@ from keras import backend as K
 
 class CNNspecs:
     """configuration of upscaling network and its parameters"""
-    def __init__(self, model_type='UNet', n_levels=3, n_convs=3, n_fmaps=dict(start=64, mult=2), kernel_size=(3,3,3),
-                 pool_size=(2,2,2), sc=4, d=280, m=3, s=64):
+    def __init__(self, model_type='UNet', n_levels=3, n_convs=3, n_fmaps=dict(start=64, mult=2), kernel_size=(3, 3, 3),
+                 pool_size=(2, 2, 2), sc=4, d=280, m=3, s=64):
         self.model_type = model_type.lower()
         if self.model_type == 'unet' or self.model_type == 'u-net':
             self.n_levels, self.n_convs, self.n_fmaps, self.kernel_size, self.pool_size = \
@@ -80,6 +80,80 @@ def specify_unet(n_levels, n_convs, n_fmaps, kernel_size, pool_size):
     return n_levels, n_convs, n_fmaps, kernel_size, pool_size
 
 
+def sharing_upsaling_unet(my_specs):
+    up_model = dict()
+    up_model["layers"] = []
+    up_model["connectivity"] = []
+    sc = my_specs.sc
+    print("SC",sc)
+    n_levels = my_specs.n_levels
+    print("N_LEVELS", n_levels)
+    n_convs = my_specs.n_convs
+    n_fmaps = my_specs.n_fmaps
+    kernel_size = my_specs.kernel_size
+    merge_index = []
+    curr_shape = np.array([16, 64, 64])
+    for l in range(n_levels):
+        print(l, n_fmaps[l], kernel_size[l])
+        for c_c, (n_f, ks) in enumerate(zip(n_fmaps[l], kernel_size[l])):
+            up_model['layers'].append(Convolution3D(n_f, ks[0], ks[1]*sc+((ks[1]*sc)%2-1), ks[2]*sc+(ks[2]*sc)%2-1,
+                                        init='he_normal', border_mode='same',
+                                        activation='relu', name='conv_downleg_l{0:}_{1:}'.format(l, c_c)))
+
+            up_model['connectivity'].append(-1)
+        if l < n_levels - 1:
+            if sc >= 2:
+                pool_size = (1, 2, 2)
+                up_model['layers'].append(Deconvolution3D(n_f, ks[0]*sc-1, ks[1]*sc-1, ks[2]*sc-1,
+                                    output_shape=(None, n_f,) + tuple(curr_shape*np.array([sc,1,1])),
+                                    subsample=(sc, 1, 1),init='he_normal', border_mode='same',
+                                    activation='relu', name='transconv_downleg_l{0:}'.format(l)))
+                up_model['connectivity'].append(-1)
+                last_layer_index = -2
+                sc /= 2
+            else: # downsampling in all dimensions now
+                sc = 1
+                pool_size = (2, 2, 2)
+                last_layer_index = -1
+
+            #merge_shapes.append(list(layers[-1].get_shape().as_list()[spatial_slice]))
+            merge_index.append(len(up_model['layers']))
+            up_model['layers'].append(MaxPooling3D(pool_size=pool_size, border_mode='same',
+                                                   name='maxpool_l{0:}'.format(l)))
+            curr_shape = curr_shape/np.array(pool_size)
+            up_model['connectivity'].append(last_layer_index)
+
+    def merge_caller(tensors, indices):
+        if K.image_dim_ordering() == 'tf':
+            ch_axis = -1
+        else:
+            ch_axis = 1
+        return merge([tensors[indices[0]], tensors[indices[1]]], mode='concat', concat_axis=ch_axis)
+
+    for l in range(n_levels-1)[::-1]:
+        curr_shape = curr_shape * np.array([2*sc, 2, 2])
+        up_model['layers'].append(Deconvolution3D(n_fmaps[l][0], kernel_size[l][-1][0], kernel_size[l][-1][1],
+                                                  kernel_size[l][-1][2],
+                                                  output_shape=(None, n_fmaps[l][0],) +
+                                                               tuple(curr_shape), subsample=(2*sc, 2, 2),
+                                                  init='he_normal', border_mode='same', activation='relu',
+                                                  name='transconv_upleg_l{0:}'.format(l)))
+        up_model['connectivity'].append(-1)
+
+        up_model['layers'].append(merge_caller)
+        up_model['connectivity'].append((-(len(up_model['layers'])-merge_index[l]),-1))
+
+        for c_c, (n_f, ks) in enumerate(zip(n_fmaps[l], kernel_size[l])):
+            up_model['layers'].append(Convolution3D(n_f, ks[0], ks[1], ks[2], init='he_normal', border_mode='same',
+                                      activation='relu', name='conv_upleg_l{0:}_{1:}'.format(l, c_c)))
+            up_model['connectivity'].append(-1)
+
+    up_model['layers'].append(Convolution3D(1, 3, 3, 3, init='he_normal', border_mode='same', name='conv_final'))
+    up_model['connectivity'].append(-1)
+
+    return up_model
+
+
 def upscaling_unet(my_specs, layers):
     """adds layers of a 3D-SRUnet"""
 
@@ -96,15 +170,14 @@ def upscaling_unet(my_specs, layers):
     else:
         spatial_slice = np.s_[2:]
 
-    for l in range(n_levels): #downstream
+    for l in range(n_levels):   # downstream
         for c_c, (n_f, ks) in enumerate(zip(n_fmaps[l], kernel_size[l])):
             layers.append(Convolution3D(n_f, ks[0], ks[1]*sc+((ks[1]*sc)%2-1), ks[2]*sc+(ks[2]*sc)%2-1,
                                         init='he_normal', border_mode='same',
-                                        activation='relu', name='conv_downleg_l{0:}_{1:}'.format(l, c_c))(layers[-1])
-                          )
-        if l < n_levels - 1: #intermediate upsampling (doesn't happen for bottom)
+                                        activation='relu', name='conv_downleg_l{0:}_{1:}'.format(l, c_c))(layers[-1]))
+        if l < n_levels - 1:  # intermediate upsampling (doesn't happen for bottom)
             if sc >= 2:
-                pool_size = (1, 2, 2) # the later downsampling doesn't happen
+                pool_size = (1, 2, 2)  # the later downsampling doesn't happen
                 layers.append(
                     Deconvolution3D(n_f, ks[0]*sc-1, ks[1]*sc-1, ks[2]*sc-1,
                                     output_shape=(None, n_f,) + tuple(layers[-1].get_shape().as_list()[
@@ -112,7 +185,7 @@ def upscaling_unet(my_specs, layers):
                                     subsample=(sc, 1, 1),init='he_normal', border_mode='same',
                                     activation='relu', name='transconv_downleg_l{0:}'.format(l))(layers[-1]))
 
-                last_layer_index=-2
+                last_layer_index = -2
                 sc /= 2
             else: # downsampling in all dimensions now
                 sc = 1

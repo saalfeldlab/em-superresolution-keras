@@ -1,5 +1,5 @@
 from CNN_models import CNNspecs
-from training_scheme import learn_from_groundtruth
+from training_scheme import learn_from_groundtruth, learn_from_groundtruth_shared
 import numpy as np
 import h5py
 import datetime, time
@@ -14,8 +14,8 @@ class LRSchedule(Callback):
     def __init__(self, base_lr, decay=-0.5):
         super(LRSchedule, self).__init__()
         self.base_lr = base_lr
-        self.start_epoch=1
-        self.decay=decay
+        self.start_epoch = 1
+        self.decay = decay
 
     def set_start_epoch(self, new_start_epoch):
         self.start_epoch = new_start_epoch
@@ -138,10 +138,10 @@ def train(exp_name=None, d=None, s=None, m=None, lr=10 ** (-5), n_l=None, n_f=No
     """training routine for an upscaling network"""
 
     start = time.time()
-    train_h5path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-10iso/training.h5'
-    valid_h5path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-10iso/validation.h5'
+    train_h5path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-10isozyx/training.h5'
+    valid_h5path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-10isozyx/validation.h5'
     mycnnspecs = CNNspecs(model_type=arch, n_levels=n_l, n_convs=n_c, n_fmaps=dict(start=n_f,mult=2), d=d, s=s, m=m)
-    gt_model = learn_from_groundtruth((16, 64, 64), mycnnspecs, lr)
+    gt_model = learn_from_groundtruth_shared((16, 64, 64), mycnnspecs, lr)
 
     saving_path = '../results_keras/'
     if exp_name == None:
@@ -219,6 +219,6 @@ def fsrcnn_training():
 
 if __name__ == '__main__':
     #unet_training()
-    train('tester', n_l=3, n_c=2, n_f=64, lr=10**(-4), arch="UNet", epoch_sessions=2)
+    train('Unet_best_zyx', n_l=4, n_c=2, n_f=64, lr=10**(-4), arch="UNet", epoch_sessions=50)
     #fsrcnn_training()
     #print_model_summary()

@@ -174,7 +174,7 @@ def plot_final_loss(exp_name, save_interval=22., smoothing=22.):
     plt.style.use('seaborn-whitegrid')
     ax, = plt.semilogy(mean_r, label='training_loss')
     plt.fill_between(range(len(mean_r)), mean_r - std_r, mean_r + std_r, alpha= 0.5)
-    plt.semilogy(epochs, epoch_val_losses, label= 'validation_loss', ls='--')
+    plt.semilogy(epochs, epoch_val_losses, label='validation_loss', ls='--')
     plt.xlabel('iterations')
     plt.ylabel('loss')
 
