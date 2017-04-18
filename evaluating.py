@@ -74,7 +74,7 @@ class Evaluator:
                         x_extra:
                     print('.', end='')
 
-                    batch[k, :, :, :] = self.get_patch((z, y, x))
+                    batch[k, :, :, :] = self.get_patch((z, y, x))/255.
 
                     if k == bs-1:
                         if K.image_dim_ordering() == 'tf':
@@ -88,13 +88,14 @@ class Evaluator:
                     else:
                         k += 1
                 print('\n')
+        if k>0:
+            batch = batch[:k,:, :, :]
 
-        batch = batch[:k,:, :, :]
-        if K.image_dim_ordering() == 'tf':
-            batch = np.expand_dims(batch, -1)
-        else:
-            batch = np.expand_dims(batch, 1)
-        yield batch
+            if K.image_dim_ordering() == 'tf':
+                batch = np.expand_dims(batch, -1)
+            else:
+                batch = np.expand_dims(batch, 1)
+            yield batch
 
     def parallel_coordinates_generator(self, ignore_border, safety_margin=(0, 0)):
         """generates the coordinates in the same order as test_data_generator (necessary because keras doesn't allow
@@ -114,7 +115,7 @@ class Evaluator:
 
             overlap_to_last = o_shape[0] - 2 * ignore_border[0]-(z_extra-z_last)
             z_extra = [int(z_extra-(self.sc-overlap_to_last % self.sc))]
-        print(x_extra, y_extra, z_extra)
+
         time.sleep(5)
         k = 1
         #x last
@@ -135,7 +136,8 @@ class Evaluator:
         model_def_file = open(json_file, 'r')
         self.model = model_from_json(json.load(model_def_file), custom_objects={'gaussian_init': gaussian_init})
         model_def_file.close()
-        self.model.load_weights(self.model_path, by_name=True)
+        self.model.load_weights(self.model_path)#os.path.dirname(self.model_path)+'/finetuning047/model_state28.h5',
+        # by_name=True)
         #self.model = load_model(self.model_path, custom_objects={'gaussian_init':gaussian_init })
         print("INPUT:", self.model.input_shape)
         return self.model
@@ -215,17 +217,20 @@ def run_evaluation(exp_name, run, ep_no, inner_cube=(24, 48, 48), bs=6, resoluti
     for mode in ['validation', 'test']:
         modelp = utils.get_model_path(exp_name, exp_no=run, ep_no=ep_no)
         savep = utils.get_save_path(exp_name, exp_no=run, ep_no=ep_no,
-                                   mode=mode)
-        simple_evaluator = Evaluator(modelp, savep, utils.get_data_path(mode, resolution))
+                                   mode=mode, add='w-gtzyx')
+        simple_evaluator = Evaluator(modelp, savep, utils.get_data_path(mode, resolution, add='zyx'))
         simple_evaluator.run_full_evaluation(inner_cube=inner_cube, bs=bs)
 
 
 def fsrcnn_hyperparameter_evaluation(ep_no=12):
+    k = 0
+    ep_nos = [186, 161, 140, 168, 141, 121, 162, 142, 126, 148, 125, 110]
     for d in [240, 280]:
         for s in [48, 64]:
-            for m in [2,3,4]:
-                for run in range(2):
-                    run_evaluation('FSRCNN_d{0:}_s{1:}_m{2:}'.format(d, s, m), run, ep_no)
+            for m in [2, 3, 4]:
+                run_evaluation('FSRCNN_d{0:}_s{1:}_m{2:}_100h'.format(d, s, m), 0, 49, inner_cube=(48,48,24),
+                               resolution=10)
+                k += 1
 
 
 def evaluate_per_saved_epoch(max_epoch, exp_name, run, ep_no, inner_cube=(24, 48, 48), bs=6):
@@ -238,9 +243,13 @@ if __name__ == '__main__':
 
     #FSRCNN_evaluation()
 
+    #fsrcnn_hyperparameter_evaluation(ep_no=49)
+
+    run_evaluation('Unet_best_zyx', 3, 28, inner_cube=(24, 48, 48), resolution=10)
+
     #evaluate_whole_run()
-    simple_eval = Evaluator(utils.get_model_path('FSRCNN_d280_s64_m2', 0, 12), 'test_direct.h5',
-                            '/groups/saalfeld/saalfeldlab/larissa/cremi/A_downscaled_times4.crop.h5')
-    simple_eval.run_full_evaluation(inner_cube=(24,48,48), bs=6)
+    #simple_eval = Evaluator(utils.get_model_path('unet_zyx_nl2_nc2_nf32', 0, 49), utils.get_save_path(
+    #    'unet_zyx_nl2_nc2_nf32', 0, 49), utils.get_data_path('validation', 10, add='zyx'))
+    #simple_eval.run_full_evaluation(inner_cube=(24,48,48), bs=6)
     #shifted_evaluation('Unet_nl4_nc2_nf64_dc1', 0, 49)
     # main()

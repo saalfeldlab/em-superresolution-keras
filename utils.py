@@ -24,8 +24,8 @@ def get_save_path(exp_name, exp_no, ep_no, mode='validation', add=''):
         ep_no) + '_'+add+'.h5'
 
 
-def get_data_path(mode, resolution=16):
-    return '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-{0:d}iso/'.format(resolution)+mode+'.h5'
+def get_data_path(mode, resolution=16, add=''):
+    return '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-{0:d}iso'.format(resolution)+add+'/'+mode+'.h5'
 
 
 def fix_prelu_json_files(run, exp_name=None):
@@ -68,11 +68,10 @@ def running_mean(arr, window):
 def downscale_manually(arr, factor=4., axis=0):
     down_shape = list(arr.shape)
     down_shape[axis] = int(down_shape[axis]/factor)
-    print(down_shape)
     avg_array = np.zeros(down_shape)
-    reduction_slice = [np.s_[:]]*arr.ndim
-    reduction_slice[axis] = np.s_[:down_shape[axis]*factor]
-    arr = arr[reduction_slice]
+    #reduction_slice = [np.s_[:]]*arr.ndim
+    #reduction_slice[axis] = np.s_[:down_shape[axis]*factor]
+    #arr = arr[reduction_slice]
     for k in range(int(factor)):
         slicing = [np.s_[:]]*arr.ndim
         slicing[axis] = np.s_[k::factor]
@@ -93,7 +92,7 @@ def bicubic_up(arr, factor, axis):
     new_shape = tuple(np.delete(new_shape, sliceaxis, 0).astype(int))
 
     for k in range(arr.shape[sliceaxis]):
-        sliceobj = tuple([slice(None)]*sliceaxis+[slice(k, k+1,None)])
+        sliceobj = tuple([slice(None)]*sliceaxis+[slice(k, k+1, None)])
         resized_arr[sliceobj] = np.expand_dims(scipy.misc.imresize(arr[sliceobj].squeeze(), new_shape,
                                                                    interp='bicubic', mode='F'), axis=sliceaxis)
     return resized_arr
@@ -122,6 +121,8 @@ def get_cut_borders(arr):
 
 def cut_to_same_size(zero_bordered, to_be_same_sizes):
     for arr in to_be_same_sizes:
+        print arr.shape
+        print zero_bordered.shape
         assert arr.ndim == zero_bordered.ndim
         assert arr.shape == zero_bordered.shape
     p_cb = get_cut_borders(zero_bordered)
@@ -137,6 +138,12 @@ def cut_to_same_size(zero_bordered, to_be_same_sizes):
         for k, arr in enumerate(to_be_same_sizes):
             to_be_same_sizes[k] = arr[slicing_idx]
     return zero_bordered, to_be_same_sizes
+
+
+def cut_to_sc(arr, sc, axis):
+    slicing = [np.s_[:]]*arr.ndim
+    slicing[axis] =np.s_[:(arr.shape[axis]-arr.shape[axis]%sc)]
+    return arr[slicing]
 
 
 def get_epoch_losses(exp_name):
@@ -165,19 +172,26 @@ def get_time_per_epoch(exp_name):
     return training_times[-1]/(len(training_times)-1)
 
 
-def plot_final_loss(exp_name, save_interval=22., smoothing=22.):
+def plot_final_loss(exp_name, save_interval=22, smoothing=22):
     epoch_losses, epoch_val_losses = get_epoch_losses(exp_name)
-    all_losses = get_all_losses(exp_name, cp=len(epoch_losses)/save_interval)
+    print(len(epoch_losses), len(epoch_val_losses))
+    all_losses = get_all_losses(exp_name, cp=int(len(epoch_losses)/save_interval)-1)
+    print(len(all_losses))
     mean_r, std_r = running_mean(all_losses, window=smoothing)
-    epochs = range(0, len(all_losses), save_interval)
+    epochs = range(1, len(all_losses), save_interval)
 
     plt.style.use('seaborn-whitegrid')
     ax, = plt.semilogy(mean_r, label='training_loss')
     plt.fill_between(range(len(mean_r)), mean_r - std_r, mean_r + std_r, alpha= 0.5)
-    plt.semilogy(epochs, epoch_val_losses, label='validation_loss', ls='--')
+    plt.semilogy(epochs, epoch_val_losses[:-save_interval+1], label='validation_loss', ls='--')
     plt.xlabel('iterations')
     plt.ylabel('loss')
+    plt.show()
 
 
 if __name__ == '__main__':
-    plot_final_loss('FSRCNN_d240_s64_m20001')
+    #plot_final_loss('Unet_best_zyx0003')
+    for d in [240, 280]:
+        for s in [48,64]:
+            for m in [2,3,4]:
+                fix_prelu_json_files(0,'FSRCNN_d{0:}_s{1:}_m{2:}_100h'.format(d,s,m))

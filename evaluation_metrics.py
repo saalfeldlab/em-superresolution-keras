@@ -23,16 +23,24 @@ def evaluate_per_slice(error_arr):
     return per_slice_error
 
 
-def run_eval(groundtruth, prediction, sc = 4., axis=0):
+def run_eval(groundtruth, prediction, sc=4, axis=0):
+    groundtruth= utils.cut_to_sc(groundtruth, sc, axis)
+    prediction = utils.cut_to_sc(prediction, sc, axis)
     downscaled = utils.downscale_manually(groundtruth, sc, axis)
+    print downscaled.shape
     bicubic = utils.bicubic_up(downscaled, sc, axis)
     prediction, [groundtruth, bicubic] = utils.cut_to_same_size(prediction, [groundtruth, bicubic])
+    print("std", prediction.std(), groundtruth.std())
+    print("mean", prediction.mean(), groundtruth.mean())
     assert prediction.shape == groundtruth.shape
     assert prediction.shape == bicubic.shape
     mse_error = mse(prediction, groundtruth)
+    cubic_error = mse(bicubic, groundtruth)
     psnr_error = 10*np.log10(mse_error)
+    error_psnr_cubic = 10*np.log10(cubic_error)
     print("mse: ", mse_error)
     print("psnr:", psnr_error)
+    print("cubic:", error_psnr_cubic)
     bicubic_weighting = se_arr(bicubic, groundtruth)
     bicubic_weighting = 0.5+bicubic_weighting/(np.max(bicubic_weighting)*2)
     weighted_error_arr = se_arr(prediction, groundtruth) * bicubic_weighting
@@ -86,32 +94,37 @@ def per_slice_main(filename, mode='validation'):
     run_per_slice_eval(np.squeeze(gt), pred, avg=False)
 
 
-def main(filename, mode='validation_and_test'):
+def main(filename, mode='validation_and_test', axis=0, res=16, add=''):
 
     pred = h5py.File(filename, 'r')['raw']
     gt = np.array(
-        h5py.File('/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16iso/'+mode+'.h5', 'r')[
+        h5py.File('/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-{0:d}iso'.format(res)+add+'/'+mode+'.h5',
+                  'r')[
             'raw']) / 255.
     pred= pred[:,:,:]
-    mse, psnr, bicubic_weighted_mse, bicubic_weighted_psnr = run_eval(np.squeeze(gt), pred)
+    mse, psnr, bicubic_weighted_mse, bicubic_weighted_psnr = run_eval(np.squeeze(gt), pred, axis=axis)
     return mse, psnr, bicubic_weighted_mse, bicubic_weighted_psnr
 
 
-def evaluate_fsrcnn(cp=12):
+def evaluate_fsrcnn(cp=12, res=16):
     resultlist = []
+    k=0
+    ep_nos = [186, 161, 140, 168, 141, 121, 162, 142, 126, 148, 125, 110]
     for d in [240, 280]:
-        for s in [48,64]:
-            for m in [2,3,4]:
-                name='FSRCNN_d{0:}_s{1:}_m{2:}'.format(d,s,m)
-                for run in range(2):
-                    resultlist.append([d,s,m, run])
-                    for mode in ['validation', 'test']:
-                        savep = utils.get_save_path(name, exp_no=run, ep_no=cp, mode=mode)
-                        resultlist[-1] += list(main(savep, mode))
-    as_str = tabulate.tabulate(resultlist, headers=['d', 's', 'm', 'run', 'mse valid', 'psnr valid', 'bc_mse valid',
+        for s in [48, 64]:
+            for m in [2, 3, 4]:
+                name='FSRCNN_d{0:}_s{1:}_m{2:}_100h'.format(d,s,m)
+                #for run in range(2):
+                resultlist.append([d, s, m])
+                run = 0
+                for mode in ['validation', 'test']:
+                    savep = utils.get_save_path(name, exp_no=run, ep_no=cp, mode=mode, add='255')
+                    resultlist[-1] += list(main(savep, mode, res=res, axis=2))
+                k += 1
+    as_str = tabulate.tabulate(resultlist, headers=['d', 's', 'm', 'mse valid', 'psnr valid', 'bc_mse valid',
                                            'bc_psnr valid', 'mse test', 'psnr test', 'bc_mse test', 'bc_psnr test'])
 
-    file = open('../results_keras/summaries/FSRCNN_eval.txt', 'w')
+    file = open('../results_keras/summaries/FSRCNN_eval_after49_sc01_new.txt', 'w')
     file.write(as_str)
     file.close()
 
@@ -135,7 +148,7 @@ def main_evaluate_fsrcnn_longrun(run=2, cp=49):
     resultlist = []
     for d, s, m in zip([240, 240, 280], [64, 64, 64], [3, 2, 2]):
         name = 'FSRCNN_d{0:}_s{1:}_m{2:}'.format(d, s, m)
-        resultlist.append([d,s,m,run])
+        resultlist.append([d, s, m, run])
         for mode in ['validation', 'test']:
             savep = utils.get_save_path(name, exp_no=run, ep_no=cp, mode=mode)
             resultlist[-1] += list(main(savep, mode))
@@ -158,7 +171,7 @@ def main_evaluate_unets(cp= 49):
                 resultlist.append([n_l, n_f, n_c, run])
                 for mode in ['validation', 'test']:
                     savep = utils.get_save_path(name, exp_no=run, ep_no=cp, mode=mode)
-                    resultlist[-1]+= list(main(savep, mode))
+                    resultlist[-1] += list(main(savep, mode))
 
     as_str = tabulate.tabulate(resultlist, headers=['num_levels', 'start_num_filters', 'num_convs', 'run',
                                                     'mse valid', 'psnr valid', 'bc_mse valid', 'bc_psnr valid',
@@ -190,7 +203,18 @@ if __name__ == '__main__':
     #evaluate_runs()
     #bicubic_main()
     #per_slice_main(utils.get_save_path('Unet_nl4_nc2_nf64_dc1',0,49), 'validation')
-    main_evaluate_shift('Unet_nl4_nc2_nf64_dc1', 0, 49)
+    #main_evaluate_shift('Unet_nl4_nc2_nf64_dc1', 0, 49)
 
+    #evaluate_fsrcnn(49, res=16)
+    #mode = 'validation'
+    #cp = 28
+    #run = 2
+    #res = 10
+    #name = 'FSRCNN_d{0:}_s{1:}_m{2:}'.format(240, 64, 2)
+
+    #savep = utils.get_save_path(name, exp_no=run, ep_no=cp, mode=mode, add='new')
+    #main(savep, mode, res=res, axis=2)
+    main(utils.get_save_path('Unet_best_zyx',3,28, add='w-gtzyx'), mode='validation', res=10,
+         add='zyx', axis=0)
     #main(utils.get_save_path('FSRCNN_d{0:}_s{1:}_m{2:}'.format(240, 64, 2), exp_no=2, ep_no=49, mode='test'),
     # mode='test')

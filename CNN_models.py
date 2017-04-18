@@ -94,7 +94,6 @@ def sharing_upsaling_unet(my_specs):
     merge_index = []
     curr_shape = np.array([16, 64, 64])
     for l in range(n_levels):
-        print(l, n_fmaps[l], kernel_size[l])
         for c_c, (n_f, ks) in enumerate(zip(n_fmaps[l], kernel_size[l])):
             up_model['layers'].append(Convolution3D(n_f, ks[0], ks[1]*sc+((ks[1]*sc)%2-1), ks[2]*sc+(ks[2]*sc)%2-1,
                                         init='he_normal', border_mode='same',
@@ -234,7 +233,7 @@ def sparsecoding(my_specs, layers, input_shape=(64, 64, 16)):
     if K.image_dim_ordering() == 'tf':
         spatial_slice = np.s_[1:-1]
     else:
-        spatial_slice = np.s_[2:]
+        spatial_slice = np.s_[2,3,4]
 
     layers.append(Convolution3D(my_specs.d, 5, 13, 13, init='he_normal', border_mode='same')(layers[-1]))
     layers.append(PReLU(init='zero', shared_axes=spatial_slice)(layers[-1]))
