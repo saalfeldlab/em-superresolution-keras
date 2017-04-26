@@ -142,7 +142,7 @@ def cut_to_same_size(zero_bordered, to_be_same_sizes):
 
 def cut_to_sc(arr, sc, axis):
     slicing = [np.s_[:]]*arr.ndim
-    slicing[axis] =np.s_[:(arr.shape[axis]-arr.shape[axis]%sc)]
+    slicing[axis] = np.s_[:(arr.shape[axis]-arr.shape[axis]%sc)]
     return arr[slicing]
 
 

@@ -12,14 +12,13 @@ from keras import backend as K
 from CNN_models import CNNspecs
 import utils
 
-if K.image_dim_ordering() == 'tf':
+if K.image_data_format() == 'channels_last':
     spatial_slice = np.s_[1:-1]
 else:
     spatial_slice = np.s_[2:]
 
 
 class Evaluator:
-
     def __init__(self, model_path, save_path,
                  data_path='/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16iso/validation_and_test.h5',
                  sc=4.):
@@ -77,10 +76,10 @@ class Evaluator:
                     batch[k, :, :, :] = self.get_patch((z, y, x))/255.
 
                     if k == bs-1:
-                        if K.image_dim_ordering() == 'tf':
-                            batch = np.expand_dims(batch,-1)
+                        if K.image_data_format() == 'channels_last':
+                            batch = np.expand_dims(batch, -1)
                         else:
-                            batch = np.expand_dims(batch,1)
+                            batch = np.expand_dims(batch, 1)
                         l += 1
                         yield batch
                         k = 0
@@ -88,10 +87,10 @@ class Evaluator:
                     else:
                         k += 1
                 print('\n')
-        if k>0:
-            batch = batch[:k,:, :, :]
+        if k > 0:
+            batch = batch[:k, :, :, :]
 
-            if K.image_dim_ordering() == 'tf':
+            if K.image_data_format() == 'channels_last':
                 batch = np.expand_dims(batch, -1)
             else:
                 batch = np.expand_dims(batch, 1)
@@ -136,7 +135,8 @@ class Evaluator:
         model_def_file = open(json_file, 'r')
         self.model = model_from_json(json.load(model_def_file), custom_objects={'gaussian_init': gaussian_init})
         model_def_file.close()
-        self.model.load_weights(self.model_path)#os.path.dirname(self.model_path)+'/finetuning047/model_state28.h5',
+        self.model.load_weights(self.model_path)
+        #os.path.dirname(self.model_path)+'/finetuning047/model_state28.h5',
         # by_name=True)
         #self.model = load_model(self.model_path, custom_objects={'gaussian_init':gaussian_init })
         print("INPUT:", self.model.input_shape)
@@ -157,7 +157,7 @@ class Evaluator:
         self.prepare_output_file(self.model.output_shape[spatial_slice])
 
         patch = self.get_patch(coord)
-        if K.image_dim_ordering() == 'tf':
+        if K.image_data_format() == 'channels_last':
             patch = patch[np.newaxis, :, :, :, np.newaxis]
         else:
             patch = patch[np.newaxis, np.newaxis, :, :, :]
@@ -173,7 +173,7 @@ class Evaluator:
     def run_full_evaluation(self, inner_cube, bs, safety_margin=(0,0)):
         """generate prediction for a whole dataset"""
         self.load_model()
-        ignore_border = (np.array(self.model.input_shape[spatial_slice]) - np.array(inner_cube) )/ 2.
+        ignore_border = (np.array(self.model.input_shape[spatial_slice]) - np.array(inner_cube))/2.
         if not np.all([ib.is_integer() for ib in ignore_border]):
             raise ValueError('The shape of inner_cube is not valid')
         else:
@@ -210,26 +210,27 @@ def shifted_evaluation(exp_name, run, cp, resolution=16):
         for shift in range(int(shifted_evaluator.sc)):
             savep = utils.get_save_path(exp_name, exp_no=run, ep_no=cp, mode=mode, add='_shift'+str(shift))
             shifted_evaluator.reset_save_path(savep)
-            shifted_evaluator.run_full_evaluation(inner_cube=(24,48,48), bs=6, safety_margin=(shift, -shift))
+            shifted_evaluator.run_full_evaluation(inner_cube=(24, 48, 48), bs=6, safety_margin=(shift, -shift))
 
 
-def run_evaluation(exp_name, run, ep_no, inner_cube=(24, 48, 48), bs=6, resolution=16):
+def run_evaluation(exp_name, run, ep_no, inner_cube=(24, 48, 48), bs=6, resolution=16, add_to_save_path='',
+                   add_to_data_path='zyx'):
     for mode in ['validation', 'test']:
         modelp = utils.get_model_path(exp_name, exp_no=run, ep_no=ep_no)
         savep = utils.get_save_path(exp_name, exp_no=run, ep_no=ep_no,
-                                   mode=mode, add='w-gtzyx')
-        simple_evaluator = Evaluator(modelp, savep, utils.get_data_path(mode, resolution, add='zyx'))
+                                   mode=mode, add=add_to_save_path)
+        simple_evaluator = Evaluator(modelp, savep, utils.get_data_path(mode, resolution, add=add_to_data_path))
         simple_evaluator.run_full_evaluation(inner_cube=inner_cube, bs=bs)
 
 
-def fsrcnn_hyperparameter_evaluation(ep_no=12):
+def fsrcnn_hyperparameter_evaluation(ep_no=49):
     k = 0
-    ep_nos = [186, 161, 140, 168, 141, 121, 162, 142, 126, 148, 125, 110]
+    # ep_nos = [186, 161, 140, 168, 141, 121, 162, 142, 126, 148, 125, 110]
     for d in [240, 280]:
         for s in [48, 64]:
             for m in [2, 3, 4]:
-                run_evaluation('FSRCNN_d{0:}_s{1:}_m{2:}_100h'.format(d, s, m), 0, 49, inner_cube=(48,48,24),
-                               resolution=10)
+                run_evaluation('fsrcnn50_d{0:}_s{1:}_m{2:}'.format(d, s, m), 1, ep_no, inner_cube=(24,48,48),
+                               resolution=16)
                 k += 1
 
 
@@ -239,17 +240,17 @@ def evaluate_per_saved_epoch(max_epoch, exp_name, run, ep_no, inner_cube=(24, 48
 
 
 if __name__ == '__main__':
-    #single_FSRCNN_evaluation()
+    # single_FSRCNN_evaluation()
 
-    #FSRCNN_evaluation()
+    # FSRCNN_evaluation()
 
-    #fsrcnn_hyperparameter_evaluation(ep_no=49)
+    fsrcnn_hyperparameter_evaluation(ep_no=49)
 
-    run_evaluation('Unet_best_zyx', 3, 28, inner_cube=(24, 48, 48), resolution=10)
+    # run_evaluation('Unet_best_zyx', 3, 28, inner_cube=(24, 48, 48), resolution=10)
 
-    #evaluate_whole_run()
-    #simple_eval = Evaluator(utils.get_model_path('unet_zyx_nl2_nc2_nf32', 0, 49), utils.get_save_path(
-    #    'unet_zyx_nl2_nc2_nf32', 0, 49), utils.get_data_path('validation', 10, add='zyx'))
-    #simple_eval.run_full_evaluation(inner_cube=(24,48,48), bs=6)
-    #shifted_evaluation('Unet_nl4_nc2_nf64_dc1', 0, 49)
+    # evaluate_whole_run()
+    # simple_eval = Evaluator(utils.get_model_path('unet_zyx_nl2_nc2_nf32', 0, 49), utils.get_save_path(
+    #     'unet_zyx_nl2_nc2_nf32', 0, 49), utils.get_data_path('validation', 10, add='zyx'))
+    # simple_eval.run_full_evaluation(inner_cube=(24,48,48), bs=6)
+    # shifted_evaluation('Unet_nl4_nc2_nf64_dc1', 0, 49)
     # main()

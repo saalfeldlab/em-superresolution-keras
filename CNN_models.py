@@ -1,8 +1,8 @@
-from keras.layers import merge
-from keras.layers import Convolution3D, MaxPooling3D, Cropping3D
+from keras.layers import concatenate
+from keras.layers import Conv3D, MaxPooling3D, Cropping3D
 from keras_contrib.layers import Deconvolution3D
 from keras.layers.advanced_activations import PReLU
-import keras.initializations
+import keras.initializers
 import numpy as np
 import warnings
 from keras import backend as K
@@ -95,17 +95,17 @@ def sharing_upsaling_unet(my_specs):
     curr_shape = np.array([16, 64, 64])
     for l in range(n_levels):
         for c_c, (n_f, ks) in enumerate(zip(n_fmaps[l], kernel_size[l])):
-            up_model['layers'].append(Convolution3D(n_f, ks[0], ks[1]*sc+((ks[1]*sc)%2-1), ks[2]*sc+(ks[2]*sc)%2-1,
-                                        init='he_normal', border_mode='same',
-                                        activation='relu', name='conv_downleg_l{0:}_{1:}'.format(l, c_c)))
-
+            up_model['layers'].append(Conv3D(n_f, (ks[0], ks[1]*sc+((ks[1]*sc)%2-1), ks[2]*sc+(ks[2]*sc)%2-1),
+                                             kernel_initializer='he_normal', bias_initializer='he_normal',
+                                             padding='same', activation='relu',
+                                             name='conv_downleg_l{0:}_{1:}'.format(l, c_c)))
             up_model['connectivity'].append(-1)
         if l < n_levels - 1:
             if sc >= 2:
                 pool_size = (1, 2, 2)
-                up_model['layers'].append(Deconvolution3D(n_f, ks[0]*sc-1, ks[1]*sc-1, ks[2]*sc-1,
+                up_model['layers'].append(Deconvolution3D(n_f, (ks[0]*sc-1, ks[1]*sc-1, ks[2]*sc-1),
                                     output_shape=(None, n_f,) + tuple(curr_shape*np.array([sc,1,1])),
-                                    subsample=(sc, 1, 1),init='he_normal', border_mode='same',
+                                    strides=(sc, 1, 1), kernel_initializer='he_normal', padding='same',
                                     activation='relu', name='transconv_downleg_l{0:}'.format(l)))
                 up_model['connectivity'].append(-1)
                 last_layer_index = -2
@@ -117,37 +117,37 @@ def sharing_upsaling_unet(my_specs):
 
             #merge_shapes.append(list(layers[-1].get_shape().as_list()[spatial_slice]))
             merge_index.append(len(up_model['layers']))
-            up_model['layers'].append(MaxPooling3D(pool_size=pool_size, border_mode='same',
-                                                   name='maxpool_l{0:}'.format(l)))
+            up_model['layers'].append(MaxPooling3D(pool_size=pool_size, padding='same', name='maxpool_l{0:}'.format(l)))
             curr_shape = curr_shape/np.array(pool_size)
             up_model['connectivity'].append(last_layer_index)
 
     def merge_caller(tensors, indices):
-        if K.image_dim_ordering() == 'tf':
+        if K.image_data_format() == 'channels_last':
             ch_axis = -1
         else:
             ch_axis = 1
-        return merge([tensors[indices[0]], tensors[indices[1]]], mode='concat', concat_axis=ch_axis)
+        return concatenate([tensors[indices[0]], tensors[indices[1]]], axis=ch_axis)
 
     for l in range(n_levels-1)[::-1]:
         curr_shape = curr_shape * np.array([2*sc, 2, 2])
-        up_model['layers'].append(Deconvolution3D(n_fmaps[l][0], kernel_size[l][-1][0], kernel_size[l][-1][1],
-                                                  kernel_size[l][-1][2],
-                                                  output_shape=(None, n_fmaps[l][0],) +
-                                                               tuple(curr_shape), subsample=(2*sc, 2, 2),
-                                                  init='he_normal', border_mode='same', activation='relu',
-                                                  name='transconv_upleg_l{0:}'.format(l)))
+        up_model['layers'].append(Deconvolution3D(n_fmaps[l][0], (kernel_size[l][-1][0], kernel_size[l][-1][1],
+                                                  kernel_size[l][-1][2]),
+                                                  output_shape=(None, n_fmaps[l][0],) + tuple(curr_shape),
+                                                  strides=(2*sc, 2, 2), kernel_initializer='he_normal', padding='same',
+                                                  activation='relu', name='transconv_upleg_l{0:}'.format(l)))
         up_model['connectivity'].append(-1)
 
         up_model['layers'].append(merge_caller)
-        up_model['connectivity'].append((-(len(up_model['layers'])-merge_index[l]),-1))
+        up_model['connectivity'].append((-(len(up_model['layers'])-merge_index[l]), -1))
 
         for c_c, (n_f, ks) in enumerate(zip(n_fmaps[l], kernel_size[l])):
-            up_model['layers'].append(Convolution3D(n_f, ks[0], ks[1], ks[2], init='he_normal', border_mode='same',
-                                      activation='relu', name='conv_upleg_l{0:}_{1:}'.format(l, c_c)))
+            up_model['layers'].append(Conv3D(n_f, (ks[0], ks[1], ks[2]), kernel_initializer='he_normal',
+                                             bias_initializer='he_normal', padding='same', activation='relu',
+                                             name='conv_upleg_l{0:}_{1:}'.format(l, c_c)))
             up_model['connectivity'].append(-1)
 
-    up_model['layers'].append(Convolution3D(1, 3, 3, 3, init='he_normal', border_mode='same', name='conv_final'))
+    up_model['layers'].append(Conv3D(1, (3, 3, 3), kernel_initializer='he_normal', bias_initializer='he_normal',
+                                     border_mode='same', name='conv_final'))
     up_model['connectivity'].append(-1)
 
     return up_model
@@ -164,25 +164,26 @@ def upscaling_unet(my_specs, layers):
     merge_shapes = []
     merge_index = []
 
-    if K.image_dim_ordering() == 'tf':
+    if K.image_data_format() == 'channels_last':
         spatial_slice = np.s_[1:-1]
     else:
         spatial_slice = np.s_[2:]
 
     for l in range(n_levels):   # downstream
         for c_c, (n_f, ks) in enumerate(zip(n_fmaps[l], kernel_size[l])):
-            layers.append(Convolution3D(n_f, ks[0], ks[1]*sc+((ks[1]*sc)%2-1), ks[2]*sc+(ks[2]*sc)%2-1,
-                                        init='he_normal', border_mode='same',
-                                        activation='relu', name='conv_downleg_l{0:}_{1:}'.format(l, c_c))(layers[-1]))
+            layers.append(Conv3D(n_f, (ks[0], ks[1]*sc+(ks[1]*sc)%2-1, ks[2]*sc+(ks[2]*sc)%2-1),
+                                 kernel_initializer='he_normal', bias_initializer='he_normal', padding='same',
+                                 activation='relu')(layers[-1]))
         if l < n_levels - 1:  # intermediate upsampling (doesn't happen for bottom)
             if sc >= 2:
                 pool_size = (1, 2, 2)  # the later downsampling doesn't happen
                 layers.append(
-                    Deconvolution3D(n_f, ks[0]*sc-1, ks[1]*sc-1, ks[2]*sc-1,
-                                    output_shape=(None, n_f,) + tuple(layers[-1].get_shape().as_list()[
+                    Deconvolution3D(n_f, (ks[0]*sc-1, ks[1]*sc-1, ks[2]*sc-1),
+                                    output_shape=(None, n_f, ) + tuple(layers[-1].get_shape().as_list()[
                                                                          spatial_slice]*np.array([sc, 1, 1])),
-                                    subsample=(sc, 1, 1),init='he_normal', border_mode='same',
-                                    activation='relu', name='transconv_downleg_l{0:}'.format(l))(layers[-1]))
+                                    strides=(sc, 1, 1), kernel_initializer='he_normal', padding='same',
+                                    activation='relu',
+                                    name='transconv_downleg_l{0:}'.format(l))(layers[-1]))
 
                 last_layer_index = -2
                 sc /= 2
@@ -192,14 +193,14 @@ def upscaling_unet(my_specs, layers):
                 last_layer_index = -1
             merge_shapes.append(list(layers[-1].get_shape().as_list()[spatial_slice]))
             merge_index.append(len(layers)-1)
-            layers.append(MaxPooling3D(pool_size=pool_size, border_mode='same', name='maxpool_l{0:}'.format(l))(layers[
-                                                                                                   last_layer_index]))
+            layers.append(MaxPooling3D(pool_size=pool_size, padding='same',
+                                       name='maxpool_l{0:}'.format(l))(layers[last_layer_index]))
 
     for l in range(n_levels-1)[::-1]:
-        layers.append(Deconvolution3D(n_fmaps[l][0], kernel_size[l][-1][0], kernel_size[l][-1][1], kernel_size[l][
-            -1][2], output_shape=(None, n_fmaps[l][0],) + tuple(layers[-1].get_shape().as_list()[spatial_slice] *
-                                                                 np.array([2 * sc, 2, 2])),subsample=(2*sc, 2, 2),
-                                      init='he_normal', border_mode='same', activation='relu',
+        layers.append(Deconvolution3D(n_fmaps[l][0], (kernel_size[l][-1][0], kernel_size[l][-1][1], kernel_size[l][
+            -1][2]), output_shape=(None, n_fmaps[l][0],) + tuple(layers[-1].get_shape().as_list()[spatial_slice] *
+                                                                 np.array([2 * sc, 2, 2])), strides=(2*sc, 2, 2),
+                                      kernel_initializer='he_normal', padding='same', activation='relu',
                                       name='transconv_upleg_l{0:}'.format(l))(layers[-1]))
         offset = np.array(merge_shapes[l]) - np.array(layers[-1].get_shape().as_list()[spatial_slice])
         if np.any(offset%2 != 0):
@@ -207,51 +208,61 @@ def upscaling_unet(my_specs, layers):
         layers.append(Cropping3D(cropping=((offset[0]/2, offset[0]/2), (offset[1]/2, offset[1]/2),
                                            (offset[2]/2, offset[2]/2)),
                                  name='cropping_l{0:}'.format(l))(layers[merge_index[l]]))
-        if K.image_dim_ordering()=='tf':
+        if K.image_data_format() == 'channels_last':
             ch_axis = -1
         else:
             ch_axis = 1
-        layers.append(merge([layers[-1], layers[-2]], mode='concat', concat_axis=ch_axis,
-                            name='merging_l{0:}'.format(l)))
+        layers.append(concatenate([layers[-1], layers[-2]], axis=ch_axis, name='merging_l{0:}'.format(l)))
 
         for c_c, (n_f, ks) in enumerate(zip(n_fmaps[l], kernel_size[l])):
-            layers.append(Convolution3D(n_f, ks[0], ks[1], ks[2], init='he_normal', border_mode='same',
-                                        activation='relu', name='conv_upleg_l{0:}_{1:}'.format(l, c_c))(layers[-1]))
+            layers.append(Conv3D(n_f, (ks[0], ks[1], ks[2]), kernel_initializer='he_normal',
+                                 bias_initializer='he_normal', padding='same', activation='relu',
+                                 name='conv_upleg_l{0:}_{1:}'.format(l, c_c))(layers[-1]))
 
-    layers.append(Convolution3D(1, 3, 3, 3, init='he_normal', border_mode='same', name='conv_final')(layers[-1]))
+    layers.append(Conv3D(1, (3, 3, 3), kernel_initializer='he_normal', bias_initializer='he_normal', padding='same',
+                         name='conv_final')(layers[-1]))
     return layers
 
 
 def gaussian_init(shape, name=None, dim_ordering=K.image_dim_ordering()):
     """alternative version of normal initializations which has a variable scale"""
-    return keras.initializations.normal(shape, scale=0.001, name=name, dim_ordering=dim_ordering)
+    return K.random_normal(shape, stddev=0.001)
 
 
 def sparsecoding(my_specs, layers, input_shape=(64, 64, 16)):
     """adds layers of a sparsecoding network (FSRCNN)"""
 
-    if K.image_dim_ordering() == 'tf':
-        spatial_slice = np.s_[1:-1]
+    if K.image_data_format() == 'channels_last':
+        spatial_slice = [1, 2, 3]
     else:
-        spatial_slice = np.s_[2,3,4]
+        spatial_slice = [2, 3, 4]
 
-    layers.append(Convolution3D(my_specs.d, 5, 13, 13, init='he_normal', border_mode='same')(layers[-1]))
-    layers.append(PReLU(init='zero', shared_axes=spatial_slice)(layers[-1]))
-    layers.append(Convolution3D(my_specs.s, 1, 1, 1, init='he_normal', border_mode='same')(layers[-1]))
-    layers.append(PReLU(init='zero', shared_axes=spatial_slice)(layers[-1]))
+    layers.append(Conv3D(my_specs.d, (5, 13, 13), kernel_initializer='he_normal',
+                         bias_initializer='he_normal', padding='same')(layers[-1]))
+    layers.append(PReLU(alpha_initializer=keras.initializers.Constant(value=0.05), shared_axes=spatial_slice)
+                  (layers[-1]))
+    layers.append(Conv3D(my_specs.s, (1, 1, 1), kernel_initializer='he_normal',
+                         bias_initializer='he_normal', padding='same')(layers[-1]))
+    layers.append(PReLU(alpha_initializer=keras.initializers.Constant(value=0.05), shared_axes=spatial_slice)
+                  (layers[-1]))
 
     for k in range(my_specs.m):
-        layers.append(Convolution3D(my_specs.s, 3, 9, 9, init='he_normal', border_mode='same')(layers[-1]))
-        layers.append(PReLU(init='zero', shared_axes=spatial_slice)(layers[-1]))
-    layers.append(Convolution3D(my_specs.d, 1, 1, 1, init='he_normal', border_mode='same')(layers[-1]))
-    layers.append(PReLU(init='zero', shared_axes=spatial_slice)(layers[-1]))
+        layers.append(Conv3D(my_specs.s, (3, 9, 9), kernel_initializer='he_normal',
+                             bias_initializer='he_normal', padding='same')(layers[-1]))
+        layers.append(PReLU(alpha_initializer=keras.initializers.Constant(value=0.05), shared_axes=spatial_slice)
+                      (layers[-1]))
+    layers.append(Conv3D(my_specs.d, (1, 1, 1), kernel_initializer='he_normal',
+                         bias_initializer='he_normal', padding='same')(layers[-1]))
+    layers.append(PReLU(alpha_initializer=keras.initializers.Constant(value=0.05), shared_axes=spatial_slice)
+                  (layers[-1]))
     spatial_output_shape = tuple(np.array(input_shape)*np.array((my_specs.sc, 1, 1)))
-    if K.image_dim_ordering() == 'tf':
+    if K.image_data_format() == 'channels_last':
         output_shape = (None,) + spatial_output_shape + (1,)
     else:
         output_shape = (None, 1,) + spatial_output_shape
-    layers.append(Deconvolution3D(1, 13, 13, 13, output_shape=output_shape, subsample=(my_specs.sc, 1, 1),
-                                  border_mode='same', init=gaussian_init)(layers[-1]))
+    print(spatial_output_shape)
+    layers.append(Deconvolution3D(1, (13, 13, 13), output_shape=output_shape, strides=(my_specs.sc, 1, 1),
+                                  padding='same', kernel_initializer=gaussian_init)(layers[-1]))
     return layers
 
 

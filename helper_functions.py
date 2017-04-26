@@ -18,7 +18,7 @@ def zero_padding_effect(input_shape):
 
 def init_downscale_model(input_size, sc, get_output_shape=False):
     model = Sequential()
-    model.add(AveragePooling3D(pool_size=sc, border_mode='valid', input_shape=input_size))
+    model.add(AveragePooling3D(pool_size=sc, stides=sc, padding='valid', input_shape=input_size))
     if get_output_shape:
         return model.get_output_shape_at(0)[1:]
     else:
@@ -63,10 +63,10 @@ def h5_from_tiffs(downsample_factor=(8,2,2), percentage_test=30):
         for k in range(downsample_factor[0]):
             imarray[k, :, :] = Image.open(path+file_format.format(i))
             i += 1
-        train_array[i/downsample_factor[0]-1, :,:] = \
+        train_array[i/downsample_factor[0]-1, :, :] = \
             np.squeeze(train_model.predict(imarray[np.newaxis, np.newaxis, :, :, : dim_x_train]))
-        valid_array[i/downsample_factor[0]-1, :,:] = np.squeeze(valid_model.predict(imarray[np.newaxis,
-                                                                                          np.newaxis,:,:,
+        valid_array[i/downsample_factor[0]-1, :, :] = np.squeeze(valid_model.predict(imarray[np.newaxis,
+                                                                                          np.newaxis, :, :,
                                                                                       dim_x_train:dim_x_max]))
     h5f_train = h5py.File(h5_path+h5_file_train, 'w-')
     h5f_train.create_dataset('raw', data=np.squeeze(train_array))
