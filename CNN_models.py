@@ -224,11 +224,6 @@ def upscaling_unet(my_specs, layers):
     return layers
 
 
-def gaussian_init(shape, name=None, dim_ordering=K.image_dim_ordering()):
-    """alternative version of normal initializations which has a variable scale"""
-    return K.random_normal(shape, stddev=0.001)
-
-
 def sparsecoding(my_specs, layers, input_shape=(64, 64, 16)):
     """adds layers of a sparsecoding network (FSRCNN)"""
 
@@ -262,7 +257,8 @@ def sparsecoding(my_specs, layers, input_shape=(64, 64, 16)):
         output_shape = (None, 1,) + spatial_output_shape
     print(spatial_output_shape)
     layers.append(Deconvolution3D(1, (13, 13, 13), output_shape=output_shape, strides=(my_specs.sc, 1, 1),
-                                  padding='same', kernel_initializer=gaussian_init)(layers[-1]))
+                                  padding='same', kernel_initializer=keras.initializers.random_normal(stddev=0.001))
+                  (layers[-1]))
     return layers
 
 

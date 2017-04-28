@@ -5,11 +5,11 @@ import h5py
 import itertools
 import numpy as np
 import time
-from CNN_models import gaussian_init
-from keras.models import load_model, model_from_json
+from keras.utils.generic_utils import get_custom_objects
+from keras.models import model_from_json
+from keras.utils import generic_utils
 from keras_contrib.layers import Deconvolution3D
 from keras import backend as K
-from CNN_models import CNNspecs
 import utils
 
 if K.image_data_format() == 'channels_last':
@@ -133,7 +133,7 @@ class Evaluator:
             json_file = exp_path+'/model_def_json.txt'
 
         model_def_file = open(json_file, 'r')
-        self.model = model_from_json(json.load(model_def_file), custom_objects={'gaussian_init': gaussian_init})
+        self.model = model_from_json(json.load(model_def_file))
         model_def_file.close()
         self.model.load_weights(self.model_path)
         #os.path.dirname(self.model_path)+'/finetuning047/model_state28.h5',
@@ -190,16 +190,15 @@ class Evaluator:
         for batch in batch_generator:
             pred_batch = self.model.predict_on_batch(batch)
             for sample, (processed_examples, coord) in zip(pred_batch, corresponding_coords_generator):
-                self.output_file['raw'].write_direct(sample, np.s_[0, ignore_border[0]: -ignore_border[0],
+                self.output_file['raw'].write_direct(sample, np.s_[ignore_border[0]: -ignore_border[0],
                                                                    ignore_border[1]: -ignore_border[1],
-                                                                   ignore_border[2]:-ignore_border[2]],
-                                                     np.s_[coord[0]-(sample.shape[1]-2*ignore_border[0]) / 2:
-                                                            coord[0] + (sample.shape[1] - 2*ignore_border[0] + 1) / 2,
-                                                           coord[1] - (sample.shape[2] - 2*ignore_border[1]) / 2:
-                                                            coord[1] + (sample.shape[2] - 2*ignore_border[1] + 1) / 2,
-                                                           coord[2] - (sample.shape[3] - 2*ignore_border[2]) / 2:
-                                                            coord[2] + (sample.shape[3] - 2*ignore_border[2] + 1) / 2])
-
+                                                                   ignore_border[2]: -ignore_border[2], 0],
+                                                     np.s_[coord[0] - (sample.shape[0] - 2*ignore_border[0]) / 2:
+                                                           coord[0] + (sample.shape[0] - 2*ignore_border[0] + 1) / 2,
+                                                           coord[1] - (sample.shape[1] - 2*ignore_border[1]) / 2:
+                                                           coord[1] + (sample.shape[1] - 2*ignore_border[1] + 1) / 2,
+                                                           coord[2] - (sample.shape[2] - 2*ignore_border[2]) / 2:
+                                                           coord[2] + (sample.shape[2] - 2*ignore_border[2] + 1) / 2])
         self.output_file.close()
 
 
@@ -217,8 +216,7 @@ def run_evaluation(exp_name, run, ep_no, inner_cube=(24, 48, 48), bs=6, resoluti
                    add_to_data_path='zyx'):
     for mode in ['validation', 'test']:
         modelp = utils.get_model_path(exp_name, exp_no=run, ep_no=ep_no)
-        savep = utils.get_save_path(exp_name, exp_no=run, ep_no=ep_no,
-                                   mode=mode, add=add_to_save_path)
+        savep = utils.get_save_path(exp_name, exp_no=run, ep_no=ep_no, mode=mode, add=add_to_save_path)
         simple_evaluator = Evaluator(modelp, savep, utils.get_data_path(mode, resolution, add=add_to_data_path))
         simple_evaluator.run_full_evaluation(inner_cube=inner_cube, bs=bs)
 
@@ -229,8 +227,9 @@ def fsrcnn_hyperparameter_evaluation(ep_no=49):
     for d in [240, 280]:
         for s in [48, 64]:
             for m in [2, 3, 4]:
-                run_evaluation('fsrcnn50_d{0:}_s{1:}_m{2:}'.format(d, s, m), 1, ep_no, inner_cube=(24,48,48),
+                run_evaluation('fsrcnn50e-4_d{0:}_s{1:}_m{2:}'.format(d, s, m), 0, ep_no, inner_cube=(24, 48, 48),
                                resolution=16)
+
                 k += 1
 
 
@@ -243,7 +242,7 @@ if __name__ == '__main__':
     # single_FSRCNN_evaluation()
 
     # FSRCNN_evaluation()
-
+    #run_evaluation('fsrcnn_test', 2, 1, bs=6)
     fsrcnn_hyperparameter_evaluation(ep_no=49)
 
     # run_evaluation('Unet_best_zyx', 3, 28, inner_cube=(24, 48, 48), resolution=10)
