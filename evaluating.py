@@ -12,6 +12,7 @@ from keras_contrib.layers import Deconvolution3D
 from keras import backend as K
 import utils
 
+
 if K.image_data_format() == 'channels_last':
     spatial_slice = np.s_[1:-1]
 else:
@@ -170,7 +171,7 @@ class Evaluator:
         """generate predictions for patches belonging to a list of coordinates (not implemented)"""
         pass
 
-    def run_full_evaluation(self, inner_cube, bs, safety_margin=(0,0)):
+    def run_full_evaluation(self, inner_cube, bs, safety_margin=(0, 0)):
         """generate prediction for a whole dataset"""
         self.load_model()
         ignore_border = (np.array(self.model.input_shape[spatial_slice]) - np.array(inner_cube))/2.
@@ -190,15 +191,26 @@ class Evaluator:
         for batch in batch_generator:
             pred_batch = self.model.predict_on_batch(batch)
             for sample, (processed_examples, coord) in zip(pred_batch, corresponding_coords_generator):
-                self.output_file['raw'].write_direct(sample, np.s_[ignore_border[0]: -ignore_border[0],
-                                                                   ignore_border[1]: -ignore_border[1],
-                                                                   ignore_border[2]: -ignore_border[2], 0],
-                                                     np.s_[coord[0] - (sample.shape[0] - 2*ignore_border[0]) / 2:
-                                                           coord[0] + (sample.shape[0] - 2*ignore_border[0] + 1) / 2,
-                                                           coord[1] - (sample.shape[1] - 2*ignore_border[1]) / 2:
-                                                           coord[1] + (sample.shape[1] - 2*ignore_border[1] + 1) / 2,
-                                                           coord[2] - (sample.shape[2] - 2*ignore_border[2]) / 2:
-                                                           coord[2] + (sample.shape[2] - 2*ignore_border[2] + 1) / 2])
+                if K.image_data_format()=='channels_last':
+                    self.output_file['raw'].write_direct(sample, np.s_[ignore_border[0]: -ignore_border[0],
+                                                                       ignore_border[1]: -ignore_border[1],
+                                                                       ignore_border[2]: -ignore_border[2], 0],
+                                                    np.s_[coord[0] - (sample.shape[0] - 2*ignore_border[0]) / 2:
+                                                          coord[0] + (sample.shape[0] - 2*ignore_border[0] + 1) / 2,
+                                                          coord[1] - (sample.shape[1] - 2*ignore_border[1]) / 2:
+                                                          coord[1] + (sample.shape[1] - 2*ignore_border[1] + 1) / 2,
+                                                          coord[2] - (sample.shape[2] - 2*ignore_border[2]) / 2:
+                                                          coord[2] + (sample.shape[2] - 2*ignore_border[2] + 1) / 2])
+                else:
+                    self.output_file['raw'].write_direct(sample, np.s_[0, ignore_border[0]: -ignore_border[0],
+                                                                       ignore_border[1]: -ignore_border[1],
+                                                                       ignore_border[2]: -ignore_border[2]],
+                                                     np.s_[coord[0] - (sample.shape[1] - 2*ignore_border[0]) / 2:
+                                                           coord[0] + (sample.shape[1] - 2*ignore_border[0] + 1) / 2,
+                                                           coord[1] - (sample.shape[2] - 2*ignore_border[1]) / 2:
+                                                           coord[1] + (sample.shape[2] - 2*ignore_border[1] + 1) / 2,
+                                                           coord[2] - (sample.shape[3] - 2*ignore_border[2]) / 2:
+                                                           coord[2] + (sample.shape[3] - 2*ignore_border[2] + 1) / 2])
         self.output_file.close()
 
 
