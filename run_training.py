@@ -12,18 +12,21 @@ import utils
 
 
 class LRSchedule(Callback):
-    def __init__(self, base_lr, decay=-0.5):
+    def __init__(self, base_lr, decay=-0.5, lr_adapt_interval=1):
         super(LRSchedule, self).__init__()
         self.base_lr = base_lr
         self.start_epoch = 1
         self.decay = decay
+        self.lr_adapt_interval = lr_adapt_interval
 
     def set_start_epoch(self, new_start_epoch):
         self.start_epoch = new_start_epoch
 
     def on_epoch_begin(self, epoch, logs=None):
-        new_lr = self.base_lr * (self.start_epoch+epoch)**self.decay
-        K.set_value(self.model.optimizer.lr, new_lr)
+        if (epoch % self.lr_adapt_interval) == 0:
+            new_lr = self.base_lr * (self.start_epoch+epoch)**self.decay
+            print('learning rate', new_lr)
+            K.set_value(self.model.optimizer.lr, new_lr)
 
 
 class ModelSaver(Callback):
@@ -42,7 +45,6 @@ class ModelSaver(Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         if (epoch > 1) and (epoch % self.save_interval == 0):
-
             self.model.save_weights(self.saving_path + self.exp_name +
                                     'weights{:02d}.h5'.format(epoch/self.save_interval))
             with open(self.saving_path + self.exp_name + 'opt_state{:02d}.p'.format(epoch/self.save_interval),
@@ -224,7 +226,7 @@ def finetuning_no_gt(exp_name, exp_no, ep_no, lr=10**(-5), arch='Unet', n_l=None
 
 
 def train(exp_name=None, d=None, s=None, m=None, lr=10 ** (-5), n_l=None, n_f=None, n_c=None, arch='UNet', bs=6,
-          epoch_sessions=50, saving_interval=22, steps_per_epoch=22):
+          epoch_sessions=50, saving_interval=22, steps_per_epoch=22, lr_adapt_interval=22):
     """training routine for an upscaling network"""
 
     start = time.time()
@@ -266,14 +268,14 @@ def train(exp_name=None, d=None, s=None, m=None, lr=10 ** (-5), n_l=None, n_f=No
     training_only = []
     runlength.append(time.time()-start)
     training_only.append(time.time()-start)
-    scheduler = LRSchedule(K.get_value(gt_model.optimizer.lr))
+    scheduler = LRSchedule(K.get_value(gt_model.optimizer.lr), lr_adapt_interval=lr_adapt_interval)
     model_saver = ModelSaver(saving_interval, saving_path, exp_name, start)
     history = LossHistory(saving_interval, saving_path, exp_name)
 
     epoch_history = gt_model.fit_generator(mygen_train, steps_per_epoch=steps_per_epoch,
                                            epochs=saving_interval*epoch_sessions, workers=1,
                                            validation_data=mygen_valid, validation_steps=5,
-                                           callbacks=[history, model_saver, scheduler],
+                                           callbacks=[history, model_saver],# scheduler],
                                            max_q_size=bs*2)
     training_only.append(time.time()-runlength[-1]-start)
     print(training_only[-1])
@@ -301,11 +303,12 @@ def unet_training():
 
 
 def fsrcnn_training():
-    d = 280  # 240 280
-    s = 48  # 48 64
-    m = 4  # 2 3 4
-    name = 'fsrcnn50_d{0:}_s{1:}_m{2:}'.format(d, s, m)
-    train(name, d=d, s=s, m=m, lr=10 ** (-5), arch="FSRCNN", epoch_sessions=50, saving_interval=22)
+    d = 240  # 240 280
+    s = 64  # 48 64
+    m = 3  # 2 3 4
+    #name = 'fsrcnn50_d{0:}_s{1:}_m{2:}'.format(d, s, m)
+    name='fsrcnn_22lradapt_e-4'
+    train(name, d=d, s=s, m=m, lr=10 ** (-4), arch="FSRCNN", epoch_sessions=50, saving_interval=22)
 
 
 if __name__ == '__main__':
