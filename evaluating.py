@@ -136,8 +136,8 @@ class Evaluator:
         model_def_file = open(json_file, 'r')
         self.model = model_from_json(json.load(model_def_file), custom_objects={'gaussian_init': gaussian_init})
         model_def_file.close()
-        self.model.load_weights(self.model_path)#os.path.dirname(self.model_path)+'/finetuning047/model_state28.h5',
-        # by_name=True)
+        self.model.load_weights(os.path.dirname(self.model_path)+'/finetuning049e-4/model_state15.h5',
+         by_name=True)
         #self.model = load_model(self.model_path, custom_objects={'gaussian_init':gaussian_init })
         print("INPUT:", self.model.input_shape)
         return self.model
@@ -213,23 +213,41 @@ def shifted_evaluation(exp_name, run, cp, resolution=16):
             shifted_evaluator.run_full_evaluation(inner_cube=(24,48,48), bs=6, safety_margin=(shift, -shift))
 
 
-def run_evaluation(exp_name, run, ep_no, inner_cube=(24, 48, 48), bs=6, resolution=16):
-    for mode in ['validation', 'test']:
+def run_evaluation(exp_name, run, ep_no, inner_cube=(24, 48, 48), bs=6, resolution=16, add_to_file='', modes=None):
+    if modes is None:
+        modes= ['validation', 'test']
+    for mode in modes:
         modelp = utils.get_model_path(exp_name, exp_no=run, ep_no=ep_no)
         savep = utils.get_save_path(exp_name, exp_no=run, ep_no=ep_no,
-                                   mode=mode, add='w-gtzyx')
+                                   mode=mode, add=add_to_file)
         simple_evaluator = Evaluator(modelp, savep, utils.get_data_path(mode, resolution, add='zyx'))
         simple_evaluator.run_full_evaluation(inner_cube=inner_cube, bs=bs)
 
 
 def fsrcnn_hyperparameter_evaluation(ep_no=12):
     k = 0
-    ep_nos = [186, 161, 140, 168, 141, 121, 162, 142, 126, 148, 125, 110]
+
     for d in [240, 280]:
         for s in [48, 64]:
             for m in [2, 3, 4]:
-                run_evaluation('FSRCNN_d{0:}_s{1:}_m{2:}_100h'.format(d, s, m), 0, 49, inner_cube=(48,48,24),
-                               resolution=10)
+                for ep in range(10,160,10):
+                    try:
+                        run_evaluation('longFSRCNN_d{0:}_s{1:}_m{2:}_3868b61_lr-4_init5e-5'.format(d, s, m), 0, ep-1,
+                                       add_to_file='all', modes='training_subset')
+                    except OSError, e:
+                        if e.errno != 17:
+                            raise
+                        pass
+                    k += 1
+
+
+def unet_hyperparameter_evaluation(ep_no=49):
+    k = 0
+
+    for n_l in [2, 3, 4]:
+        for n_f in [32, 64]:
+            for n_c in [2, 3]:
+                run_evaluation('longUnet_nl{0:}_nf{1:}_nc{2:}_3868b61_scheduler10'.format(n_l, n_f, n_c), 0, ep_no)
                 k += 1
 
 
@@ -243,9 +261,49 @@ if __name__ == '__main__':
 
     #FSRCNN_evaluation()
 
-    #fsrcnn_hyperparameter_evaluation(ep_no=49)
+    #fsrcnn_hyperparameter_evaluation(ep_no=149)
 
-    run_evaluation('Unet_best_zyx', 3, 28, inner_cube=(24, 48, 48), resolution=10)
+    #n_c=2
+    #n_f=64
+    #n_l=4
+    #for ep in range(10, 91, 10) + range(91, 100, 1) + range(100, 160, 10):#range(91, 99, 1):
+    #for ep in [99]:#range(,120,10):
+    run_evaluation('new_wogt_3-32-3', 2, 15)
+        #try:
+        #    run_evaluation('longUnet_nl{0:}_nf{1:}_nc{2:}_3868b61_scheduler10'.format(n_l, n_f, n_c), 0, ep - 1,
+        #               add_to_file='all', modes=['test'])
+        #except OSError, e:
+        #    if e.errno != 17:
+        #        raise
+        #    pass
+
+    #d= 240
+    #s= 64
+    #m = 3
+    ## for ep in range(10, 91, 10) + range(91, 100, 1) + range(100, 160, 10):#range(91, 99, 1):
+    #for ep in range(99, 100, 1):
+    #    try:
+    #        run_evaluation('longFSRCNN_d{0:}_s{1:}_m{2:}_3868b61_lr-4_init5e-5'.format(d, s, m), 0, ep - 1,
+    #                       add_to_file='all', modes=['validation'])
+    #    except OSError, e:
+    #        if e.errno != 17:
+    #            raise
+    #        pass
+
+    #unet_hyperparameter_evaluation(ep_no=99)
+
+    #for conf in [(4,64,2), (4,64,3), (3,64,2), (3,64,3)]:
+    #    exp_name = 'longUnet_nl{0:}_nf{1:}_nc{2:}_3868b61_scheduler10'.format(*conf)
+    #    for ep in [49,99]:
+
+    #        modelp = utils.get_model_path(exp_name, exp_no=0, ep_no=ep)
+    #        savep = utils.get_save_path(exp_name, exp_no=0, ep_no=ep, mode='training')
+    #        simple_evaluator = Evaluator(modelp, savep, utils.get_data_path('training', 16, add='zyx'))
+    #        simple_evaluator.run_full_evaluation(inner_cube=(24,48,48), bs=6)
+    #utils.fix_prelu_json_files(0, 'FSRCNN_d240_s64_m3_3868b61_lr-4')
+    #run_evaluation('Unet_nl3_nf64_nc2_3868b61_lr5-4', 0, 49, inner_cube=(24, 48, 48), resolution=16)
+    #utils.fix_prelu_json_files(0, 'FSRCNN_const1e-5_240482')
+    #run_evaluation('FSRCNN_const1e-5_240482', 0, 49, inner_cube=(24, 48, 48), resolution=16)
 
     #evaluate_whole_run()
     #simple_eval = Evaluator(utils.get_model_path('unet_zyx_nl2_nc2_nf32', 0, 49), utils.get_save_path(

@@ -1,28 +1,38 @@
+import numpy as np
+np.random.seed(1337)
+import tensorflow as tf
+tf.set_random_seed(1337)
+
 from CNN_models import CNNspecs
 from training_scheme import learn_from_groundtruth, learn_from_groundtruth_shared, learn_without_groundtruth_simulated
-import numpy as np
+
 import h5py
 import datetime, time
 import os
+
+from keras import backend as K
+
 from keras.callbacks import Callback
 import cPickle as pickle
-from keras import backend as K
+
 import json
 import utils
 
 
 class LRSchedule(Callback):
-    def __init__(self, base_lr, decay=-0.5):
+    def __init__(self, base_lr, decay=-0.5, start_epoch=0, adapt_interval=1):
         super(LRSchedule, self).__init__()
         self.base_lr = base_lr
-        self.start_epoch = 1
+        self.start_epoch = 1+start_epoch
         self.decay = decay
+        self.adapt_interval = adapt_interval
 
     def set_start_epoch(self, new_start_epoch):
         self.start_epoch = new_start_epoch
 
     def on_epoch_begin(self, epoch, logs=None):
-        new_lr = self.base_lr * (self.start_epoch+epoch)**self.decay
+        print(epoch)
+        new_lr = self.base_lr * (self.start_epoch+epoch/self.adapt_interval)**self.decay
         K.set_value(self.model.optimizer.lr, new_lr)
 
 
@@ -51,6 +61,34 @@ class ModelSaver(Callback):
             self.model.save(self.saving_path + self.exp_name + 'model_state{:02d}.h5'.format(epoch/self.save_interval))
             self.runlength.append(time.time() - self.start)
 
+class LossHistory_plus_BatchChecker(Callback):
+    def __init__(self, save_interval, saving_path, exp_name):
+        super(LossHistory_plus_BatchChecker, self).__init__()
+        self.save_interval = save_interval
+        self.saving_path = saving_path
+        self.exp_name = exp_name
+        self.losses = []
+
+    def on_train_begin(self, logs={}):
+        self.losses = []
+
+    def on_batch_end(self, batch, logs={}):
+        print self.model.current_generator_output.shape
+        if len(self.losses)>12:
+            if logs.get('loss')>2*np.mean(self.losses[-10:-1]):
+                print('save batch, maybe diverging')
+                hf_monitor = h5py.File(self.saving_path+self.exp_name+'monitor_batch_'+str(batch)+'.h5', 'w')
+                hf_monitor.create_dataset('input', data=self.model.current_generator_output[0][0])
+                hf_monitor.create_dataset('gt', data=self.model.current_generator_output[1][0])
+                hf_monitor.close()
+        self.losses.append(logs.get('loss'))
+
+    def on_epoch_end(self, epoch, logs=None):
+        if epoch > 1 and epoch % self.save_interval == 0:
+            with open(self.saving_path + self.exp_name +
+                              'loss_history{:02d}.p'.format(epoch/self.save_interval), 'w') as f:
+                pickle.dump(self.losses, f)
+
 
 class LossHistory(Callback):
     def __init__(self, save_interval, saving_path, exp_name):
@@ -73,7 +111,7 @@ class LossHistory(Callback):
                 pickle.dump(self.losses, f)
 
 
-def h5_data_generator_same(train_h5path, io_shape=(100,100,100), bs=1, num_outputs=1):
+def h5_data_generator_same(train_h5path, io_shape=(100,100,100), bs=1, num_outputs=1, fh=None):
     """data generator for random coordinates from h5 file"""
     train_ds = h5py.File(train_h5path, 'r')['raw']
 
@@ -85,7 +123,8 @@ def h5_data_generator_same(train_h5path, io_shape=(100,100,100), bs=1, num_outpu
         z_start = np.random.random_integers(0, train_ds.shape[0]-io_shape[0]-1, bs)
         y_start = np.random.random_integers(0, train_ds.shape[1]-io_shape[1]-1, bs)
         x_start = np.random.random_integers(0, train_ds.shape[2]-io_shape[2]-1, bs)
-
+        if fh is not None:
+            np.savetxt(fh, np.transpose([z_start, y_start, x_start]), fmt='%d')
         for k in range(bs):
             train_ds.read_direct(batch, np.s_[z_start[k]: z_start[k] + io_shape[0],
                                               y_start[k]: y_start[k] + io_shape[1],
@@ -106,7 +145,7 @@ def h5_data_generator_same(train_h5path, io_shape=(100,100,100), bs=1, num_outpu
         yield ([batch], [gt]*num_outputs)
 
 
-def h5_data_generator_same_cubic(train_h5path, io_shape=(64,64,64), bs=1, sc=4):
+def h5_data_generator_same_cubic(train_h5path, io_shape=(64,64,64), bs=1, sc=4, num_outputs=None, fh=None):
     """data generator for random coordinates from h5 file and cubic upsampling"""
     train_ds = h5py.File(train_h5path, 'r')['raw']
 
@@ -116,7 +155,8 @@ def h5_data_generator_same_cubic(train_h5path, io_shape=(64,64,64), bs=1, sc=4):
         z_start = np.random.random_integers(0, train_ds.shape[0] - io_shape[0] - 1, bs)
         y_start = np.random.random_integers(0, train_ds.shape[1] - io_shape[1] - 1, bs)
         x_start = np.random.random_integers(0, train_ds.shape[2] - io_shape[2] - 1, bs)
-
+        if fh is not None:
+            np.savetxt(fh, np.transpose([z_start, y_start, x_start]), fmt='%d')
         for k in range(bs):
             train_ds.read_direct(batch, np.s_[z_start[k]: z_start[k] + io_shape[0],
                                               y_start[k]: y_start[k] + io_shape[1],
@@ -170,11 +210,11 @@ def h5_data_generator(train_h5path, input_shape=(100, 106,106), output_shape=(4,
 
 
 def finetuning_no_gt(exp_name, exp_no, ep_no, lr=10**(-5), arch='Unet', n_l=None, n_c=None, n_f=None, d=None, s=None,
-                     m=None, bs=6, epoch_sessions=50, saving_interval=22, batches_per_epoch=22):
+                     m=None, bs=6, epoch_sessions=50, saving_interval=22, batches_per_epoch=22, adapt_interval=10):
     start = time.time()
-    train_h5path ='/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-10isozyx/training.h5'
-    valid_h5path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-10isozyx/validation.h5'
-    saving_path = '../results_keras/'
+    train_h5path ='/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16isozyx/training.h5'
+    valid_h5path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16isozyx/validation.h5'
+    saving_path = '../../results_keras/'
 
 
     mycnnspecs = CNNspecs(model_type=arch, n_levels=n_l, n_convs=n_c, n_fmaps=dict(start=n_f, mult=2), d=d, s=s, m=m)
@@ -188,7 +228,7 @@ def finetuning_no_gt(exp_name, exp_no, ep_no, lr=10**(-5), arch='Unet', n_l=None
         output_zyx = nogt_model.output_shape[2:]
     if exp_no!=0:
         exp_name+='{:04d}/'.format(exp_no)
-    exp_name+='/finetuning{:03d}e-4/'.format(ep_no)
+    exp_name+='/finetuning{:03d}e-5_otherweights/'.format(ep_no)
     os.mkdir(saving_path+exp_name)
     with open(saving_path+exp_name+'nogt_model_def_json.txt', 'wb') as outfile:
         json.dump(nogt_model.to_json(), outfile)
@@ -200,7 +240,7 @@ def finetuning_no_gt(exp_name, exp_no, ep_no, lr=10**(-5), arch='Unet', n_l=None
     training_only = []
     runlength.append(time.time()-start)
     training_only.append(time.time()-start)
-    scheduler = LRSchedule(K.get_value(nogt_model.optimizer.lr))
+    scheduler = LRSchedule(K.get_value(nogt_model.optimizer.lr), adapt_interval=adapt_interval)
     model_saver = ModelSaver(saving_interval, saving_path, exp_name, start)
     history = LossHistory(saving_interval, saving_path, exp_name)
 
@@ -217,8 +257,68 @@ def finetuning_no_gt(exp_name, exp_no, ep_no, lr=10**(-5), arch='Unet', n_l=None
         pickle.dump((model_saver.runlength, model_saver.training_only), f)
 
 
+from keras.models import load_model, model_from_json
+from CNN_models import gaussian_init
+
+
+def continue_training(full_exp_name, start_epoch=28, epoch_sessions=50, saving_interval=22, batches_per_epoch=22,
+                      bs=6, adapt_interval=1):
+    train_h5path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16isozyx/training.h5'
+    valid_h5path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16isozyx/validation.h5'
+    saving_path = '../../results_keras/'
+    full_exp_name +='/'
+
+    #with open(saving_path+full_exp_name+'model_def_json.txt', 'r') as modelfile:
+    #    gt_model = model_from_json(json.load(modelfile))
+    #with open(saving_path+full_exp_name+'nogt_model_def_json.txt') as modelfile:
+    #    gt_model = model_from_json(json.load(modelfile))
+    arch = 'Unet'
+    n_l = 3
+    n_f=32
+    n_c = 3
+    d = None
+    s = None
+    m = None
+    lr = 10**(-5)
+    #mycnnspecs = CNNspecs(model_type=arch, n_levels=n_l, n_convs=n_c, n_fmaps=dict(start=n_f, mult=2), d=d, s=s, m=m)
+    #gt_model = learn_without_groundtruth_simulated((16, 64, 64), mycnnspecs, lr)
+    #gt_model.load_weights(saving_path+full_exp_name+'weights{0:}.h5'.format(start_epoch-2))
+    gt_model = load_model(saving_path+full_exp_name+'model_state{0:}.h5'.format(start_epoch-2), custom_objects={
+                         'gaussian_init': gaussian_init})
+    if K.image_dim_ordering() == 'tf':
+        input_zyx = gt_model.input_shape[1:-1]
+        output_zyx = gt_model.output_shape[1:-1]
+    else:
+        input_zyx = gt_model.input_shape[2:]
+        output_zyx = gt_model.output_shape[2:]
+
+    mygen_train = h5_data_generator_same(train_h5path, io_shape=input_zyx, bs=bs, num_outputs=len(
+        gt_model.output_names))
+    mygen_valid = h5_data_generator_same(valid_h5path, io_shape=input_zyx, bs=bs, num_outputs=len(gt_model.output_names))
+    start = time.time()
+    runlength = []
+    training_only = []
+    runlength.append(time.time()-start)
+    training_only.append(time.time()-start)
+    scheduler = LRSchedule(K.get_value(gt_model.optimizer.lr), adapt_interval=adapt_interval)
+    model_saver = ModelSaver(saving_interval, saving_path, full_exp_name, start)
+    history = LossHistory(saving_interval, saving_path, full_exp_name)
+
+    epoch_history = gt_model.fit_generator(mygen_train, samples_per_epoch=bs*batches_per_epoch,
+                                           nb_epoch=saving_interval*epoch_sessions, nb_worker=1,
+                                           validation_data=mygen_valid, nb_val_samples=60,
+                                           callbacks=[history, model_saver, scheduler],
+                                           max_q_size=bs*2, initial_epoch=start_epoch-1)
+    training_only.append(time.time()-runlength[-1]-start)
+    print(training_only[-1])
+    with open(saving_path+full_exp_name+'epoch_history_continued.p', 'w') as f:
+        pickle.dump(epoch_history.history, f)
+    with open(saving_path+full_exp_name+'run_times_continued.p', 'w') as f:
+        pickle.dump((model_saver.runlength, model_saver.training_only), f)
+
+
 def train(exp_name=None, d=None, s=None, m=None, lr=10 ** (-5), n_l=None, n_f=None, n_c=None, arch='UNet', bs=6,
-          epoch_sessions=50, saving_interval=22, batches_per_epoch=22):
+          epoch_sessions=50, saving_interval=22, batches_per_epoch=22, adapt_interval=1):
     """training routine for an upscaling network"""
 
     start = time.time()
@@ -226,8 +326,8 @@ def train(exp_name=None, d=None, s=None, m=None, lr=10 ** (-5), n_l=None, n_f=No
     valid_h5path = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16isozyx/validation.h5'
     mycnnspecs = CNNspecs(model_type=arch, n_levels=n_l, n_convs=n_c, n_fmaps=dict(start=n_f,mult=2), d=d, s=s, m=m)
     #gt_model = learn_without_groundtruth_simulated((16, 64, 64), mycnnspecs, lr)
-    gt_model = learn_from_groundtruth((16,64,64), mycnnspecs, lr)
-    saving_path = '../results_keras/'
+    gt_model = learn_from_groundtruth_shared((16,64,64), mycnnspecs, lr)
+    saving_path = '../../results_keras/'
     if exp_name == None:
         exp_name = datetime.datetime.now().strftime("%Y-%m-%d-%H%M")+'/'
     elif os.path.isdir(saving_path+exp_name):
@@ -250,18 +350,19 @@ def train(exp_name=None, d=None, s=None, m=None, lr=10 ** (-5), n_l=None, n_f=No
     else:
         input_zyx = gt_model.input_shape[2:]
         output_zyx = gt_model.output_shape[2:]
-
+    fh_train = open(saving_path+exp_name+'coordinates_train.csv', 'ab')
     mygen_train = h5_data_generator_same(train_h5path, io_shape=input_zyx, bs=bs, num_outputs=len(
+        gt_model.output_names), fh=fh_train)
+    mygen_valid = h5_data_generator_same(valid_h5path, io_shape=input_zyx, bs=bs, num_outputs=len(
         gt_model.output_names))
-    mygen_valid = h5_data_generator_same(valid_h5path, io_shape=input_zyx, bs=bs, num_outputs=len(gt_model.output_names))
 
     runlength = []
     training_only = []
     runlength.append(time.time()-start)
     training_only.append(time.time()-start)
-    scheduler = LRSchedule(K.get_value(gt_model.optimizer.lr))
+    scheduler = LRSchedule(K.get_value(gt_model.optimizer.lr), adapt_interval=adapt_interval)
     model_saver = ModelSaver(saving_interval, saving_path, exp_name, start)
-    history = LossHistory(saving_interval, saving_path, exp_name)
+    history = LossHistory_plus_BatchChecker(saving_interval, saving_path, exp_name)
 
     epoch_history = gt_model.fit_generator(mygen_train, samples_per_epoch=bs*batches_per_epoch,
                                            nb_epoch=saving_interval*epoch_sessions, nb_worker=1,
@@ -269,6 +370,7 @@ def train(exp_name=None, d=None, s=None, m=None, lr=10 ** (-5), n_l=None, n_f=No
                                            callbacks=[history, model_saver, scheduler],
                                            max_q_size=bs*2)
     training_only.append(time.time()-runlength[-1]-start)
+    fh_train.close()
     print(training_only[-1])
     with open(saving_path+exp_name+'epoch_history.p', 'w') as f:
         pickle.dump(epoch_history.history, f)
@@ -284,21 +386,25 @@ def print_model_summary(exp_name=None, d=None, s=None, m=None, lr=10 ** (-5), n_
 
 
 def unet_training():
-    n_l = 3 # 4 3 2
-    n_f = 64 # 64 32
+    n_l = 2 # 4 3 2
+    n_f = 32 # 64 32
     n_c = 2  # 3 2
     lrexp = -4# -4 -5 -6 -7
+    scheduler = 10
     #name = 'unet_zyx_nl{0:}_nc{1:}_nf{2:}'.format(n_l, n_c, n_f)
-    name='test_shared'
-    train(name, n_l=n_l, n_c=n_c, n_f=n_f, lr=10 ** lrexp, arch="UNet", epoch_sessions=50, bs=2)
+    #name='longUnet_nl{0:}_nf{1:}_nc{2:}_3868b61_scheduler{3:}'.format(n_l, n_f, n_c, scheduler)
+    name = 'testfordivergence'
+    train(name, n_l=n_l, n_c=n_c, n_f=n_f, lr=10 ** lrexp, arch="UNet", epoch_sessions=150, bs=6, saving_interval=1,
+          batches_per_epoch=22*22, adapt_interval=scheduler)
 
 
 def fsrcnn_training():
-    d = 280 # 240 280
-    s = 48  # 48 64
-    m = 4  # 2 3 4
-    name = 'FSRCNN_d{0:}_s{1:}_m{2:}_49again'.format(d, s, m)
-    train(name, d=d, s=s, m=m, lr=10 ** (-5), arch="FSRCNN", epoch_sessions=50, saving_interval=22)
+    d = 240 # 240 280
+    s = 64  # 48 64
+    m = 2  # 2 3 4
+    name = 'testtraining'
+    train(name, d=d, s=s, m=m, lr=10 ** (-5), arch="FSRCNN", epoch_sessions=150, saving_interval=1, batches_per_epoch
+    = 22*22)
 
 
 if __name__ == '__main__':
@@ -306,7 +412,20 @@ if __name__ == '__main__':
     #                 saving_interval=22, batches_per_epoch=22*2, lr=10**(-4))
 
 
-    #unet_training()
     #train('Unet_best_zyx_cubic', n_l=4, n_c=2, n_f=64, lr=10**(-4), arch="UNet", epoch_sessions=50)
-    fsrcnn_training()
+    #fsrcnn_training()
+
+    #train(n_l=3, n_c=3, n_f=32, lr= 10**(-4), arch='Unet', epoch_sessions=50, bs=6,
+    #      saving_interval=1, batches_per_epoch=22*22, adapt_interval=10)
+    #finetuning_no_gt('new_wogt_3-32-3',2, 49, n_l=3, n_c=3, n_f=32, lr=10**(-5), arch='Unet',
+    #                 epoch_sessions=150,
+    #                 bs=6, saving_interval=1, batches_per_epoch=22*22, adapt_interval=10)
+
+    unet_training()
+
+    #continue_training('new_wogt_3-32-30002/finetuning049e-5_otherweights', 33, epoch_sessions=150, bs=6,
+    #                  saving_interval=1,
+    #                  batches_per_epoch=22*22, adapt_interval=10)
+    #continue_training('FSRCNN_d240_s64_m3_3868b61_lr-4_init5e-5', 21, epoch_sessions=150, saving_interval=1,
+    #                  batches_per_epoch=22*22, bs=6)
     #print_model_summary()

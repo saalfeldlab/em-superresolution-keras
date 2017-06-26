@@ -74,7 +74,7 @@ def downscale_manually(arr, factor=4., axis=0):
     #arr = arr[reduction_slice]
     for k in range(int(factor)):
         slicing = [np.s_[:]]*arr.ndim
-        slicing[axis] = np.s_[k::factor]
+        slicing[axis] = np.s_[k::int(factor)]
         avg_array += arr[slicing]
     return avg_array/factor
 

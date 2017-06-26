@@ -10,8 +10,10 @@ from keras import backend as K
 
 class CNNspecs:
     """configuration of upscaling network and its parameters"""
-    def __init__(self, model_type='UNet', n_levels=3, n_convs=3, n_fmaps=dict(start=64, mult=2), kernel_size=(3, 3, 3),
+    def __init__(self, model_type='UNet', n_levels=3, n_convs=3, n_fmaps=None, kernel_size=(3, 3, 3),
                  pool_size=(2, 2, 2), sc=4, d=280, m=3, s=64):
+        if n_fmaps is None:
+            n_fmaps = dict(start=64, mult=2)
         self.model_type = model_type.lower()
         if self.model_type == 'unet' or self.model_type == 'u-net':
             self.n_levels, self.n_convs, self.n_fmaps, self.kernel_size, self.pool_size = \
@@ -224,7 +226,7 @@ def upscaling_unet(my_specs, layers):
 
 def gaussian_init(shape, name=None, dim_ordering=K.image_dim_ordering()):
     """alternative version of normal initializations which has a variable scale"""
-    return keras.initializations.normal(shape, scale=0.001, name=name, dim_ordering=dim_ordering)
+    return keras.initializations.normal(shape, scale=5e-5, name=name, dim_ordering=dim_ordering)
 
 
 def sparsecoding(my_specs, layers, input_shape=(64, 64, 16)):

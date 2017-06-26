@@ -134,8 +134,8 @@ def learn_without_groundtruth_simulated(input_shape, my_specs, lr):
     model.compile(optimizer=adam,
                   loss={'diff_1_2': mean_squared, 'diff_1_3': mean_squared, 'diff_avg_first':
                         mean_squared, 'diff_avg_1_2': mean_squared, 'diff_avg_1_3': mean_squared, 'diff_gt': dummy_loss},
-                  loss_weights={'diff_1_2': 0.5/2., 'diff_1_3': 0.5/2., 'diff_avg_first': 0.5/3., 'diff_avg_1_2':
-                                0.5/3., 'diff_avg_1_3': 0.5/3.},
+                  loss_weights={'diff_1_2': 0.5/2., 'diff_1_3': 0.5/2., 'diff_avg_first': 0.5/2., 'diff_avg_1_2':
+                                0.5/4., 'diff_avg_1_3': 0.5/4.},
                   metrics={'diff_gt': mean_squared})
     print(model.summary())
     return model

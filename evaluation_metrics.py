@@ -1,10 +1,11 @@
+from __future__ import print_function
 import numpy as np
 import h5py
 from matplotlib import pyplot as plt
 import utils
 import tabulate
 import os
-
+import cPickle as pickle
 
 def mse(arr1, arr2):
     assert arr1.shape == arr2.shape
@@ -24,31 +25,36 @@ def evaluate_per_slice(error_arr):
 
 
 def run_eval(groundtruth, prediction, sc=4, axis=0):
-    groundtruth= utils.cut_to_sc(groundtruth, sc, axis)
+    groundtruth = utils.cut_to_sc(groundtruth, sc, axis)
     prediction = utils.cut_to_sc(prediction, sc, axis)
     downscaled = utils.downscale_manually(groundtruth, sc, axis)
-    print downscaled.shape
+    print(downscaled.shape)
     bicubic = utils.bicubic_up(downscaled, sc, axis)
     prediction, [groundtruth, bicubic] = utils.cut_to_same_size(prediction, [groundtruth, bicubic])
     print("std", prediction.std(), groundtruth.std())
     print("mean", prediction.mean(), groundtruth.mean())
     assert prediction.shape == groundtruth.shape
     assert prediction.shape == bicubic.shape
-    mse_error = mse(prediction, groundtruth)
-    cubic_error = mse(bicubic, groundtruth)
-    psnr_error = 10*np.log10(mse_error)
-    error_psnr_cubic = 10*np.log10(cubic_error)
-    print("mse: ", mse_error)
-    print("psnr:", psnr_error)
-    print("cubic:", error_psnr_cubic)
+    MSE = mse(prediction, groundtruth)
+    cubic_MSE = mse(bicubic, groundtruth)
+    PSNR = 10*np.log10(MSE)
+    cubic_PSNR = 10*np.log10(cubic_MSE)
+    print("MSE: ", MSE)
+    print("PSNR:", PSNR)
+
     bicubic_weighting = se_arr(bicubic, groundtruth)
     bicubic_weighting = 0.5+bicubic_weighting/(np.max(bicubic_weighting)*2)
     weighted_error_arr = se_arr(prediction, groundtruth) * bicubic_weighting
-    weighted_mse_error = np.sum(weighted_error_arr)/groundtruth.size
-    weighted_psnr_error= 10*np.log10(weighted_mse_error)
-    print("bicubic_weighted_mse", weighted_mse_error)
-    print("bicubic_weighted_psnr", weighted_psnr_error)
-    return mse_error, psnr_error, weighted_mse_error, weighted_psnr_error
+    weighted_cubic_error_arr = se_arr(bicubic, groundtruth)* bicubic_weighting
+    wMSE = np.sum(weighted_error_arr)/groundtruth.size
+    wPSNR= 10*np.log10(wMSE)
+    cubic_wMSE = np.sum(weighted_cubic_error_arr)/groundtruth.size
+    cubic_wPSNR = 10 *np.log10(cubic_wMSE)
+    print("wMSE:", wMSE)
+    print("wPSNR", wPSNR)
+    print("cubic PSNR:", cubic_PSNR)
+    print("cubic wPSNR:", cubic_wPSNR)
+    return MSE, PSNR, wMSE, wPSNR
 
 
 def run_per_slice_eval(groundtruth, prediction, avg=True, sc=4.):
@@ -144,62 +150,111 @@ def main_evaluate_shift(exp_name, run, cp, sc=4):
     shift_file.close()
 
 
-def main_evaluate_fsrcnn_longrun(run=2, cp=49):
+def main_evaluate_fsrcnn_longrun(run=0, cp=49):
     resultlist = []
-    for d, s, m in zip([240, 240, 280], [64, 64, 64], [3, 2, 2]):
-        name = 'FSRCNN_d{0:}_s{1:}_m{2:}'.format(d, s, m)
-        resultlist.append([d, s, m, run])
-        for mode in ['validation', 'test']:
-            savep = utils.get_save_path(name, exp_no=run, ep_no=cp, mode=mode)
-            resultlist[-1] += list(main(savep, mode))
-    as_str = tabulate.tabulate(resultlist, headers=['d', 's', 'm', 'run', 'mse valid', 'psnr valid', 'bc_mse valid',
+    for d in [240, 280]:
+        for s in [48, 64]:
+            for m in [2, 3, 4]:
+                name='longFSRCNN_d{0:}_s{1:}_m{2:}_3868b61_lr-4_init5e-5'.format(d, s, m)
+                resultlist.append([d, s, m])
+                for mode in ['validation', 'test']:
+                    savep = utils.get_save_path(name, exp_no=run, ep_no=cp, mode=mode, add='icT')
+                    resultlist[-1] += list(main(savep, mode, add='zyx', res=16, axis=0))
+    as_str = tabulate.tabulate(resultlist, headers=['d', 's', 'm', 'mse valid', 'psnr valid', 'bc_mse valid',
                                                     'bc_psnr valid', 'mse test', 'psnr test', 'bc_mse test',
                                                     'bc_psnr test'])
-    file = open('../results_keras/summaries/FSRCNN_eval_longrun.txt', 'w')
+    file = open('../../results_keras/summaries/FSRCNN_eval_longrun_{0:}icT.txt'.format(cp), 'w')
     file.write(as_str)
     file.close()
 
 
 def main_evaluate_unets(cp= 49):
     resultlist = []
-    for n_l in [4, 3, 2]:
-        for n_f in [64, 32]:
-            for n_c in [3, 2]:
-                deconv=True
-                name = 'Unet_nl{0:}_nc{1:}_nf{2:}_dc{3:}'.format(n_l, n_c, n_f, int(deconv))
+    for n_l in [2,3,4]:
+        for n_f in [32, 64]:
+            for n_c in [2,3 ]:
+
+                name = 'longUnet_nl{0:}_nf{1:}_nc{2:}_3868b61_scheduler10'.format(n_l, n_f, n_c)
                 run = 0
-                resultlist.append([n_l, n_f, n_c, run])
+                resultlist.append([n_l, n_f, n_c])
                 for mode in ['validation', 'test']:
-                    savep = utils.get_save_path(name, exp_no=run, ep_no=cp, mode=mode)
-                    resultlist[-1] += list(main(savep, mode))
+                    savep = utils.get_save_path(name, exp_no=run, ep_no=cp, mode=mode, add='icT')
+                    resultlist[-1] += list(main(savep, mode, res=16, add='zyx'))
 
     as_str = tabulate.tabulate(resultlist, headers=['num_levels', 'start_num_filters', 'num_convs', 'run',
                                                     'mse valid', 'psnr valid', 'bc_mse valid', 'bc_psnr valid',
                                                     'mse test', 'psnr test', 'bc_mse test', 'bc_psnr test'])
-    file = open('../results_keras/summaries/Unet_eval.txt', 'w')
+    file = open('../../results_keras/summaries/longUnet_eval_scheduler10icT_{0}.txt'.format(cp), 'w')
     file.write(as_str)
     file.close()
 
 
 def main_evaluate_checkpoints(name='FSRCNN_d{0:}_s{1:}_m{2:}'.format(240, 64, 3), run=2):
     resultlist = []
-    for cp in range(1, 50):
+    psnrs = dict()
+    psnrs['validation'] = []
+    psnrs['test'] = []
+    psnrs['training_subset'] = []
+    psnrs['validation_wPSNR'] = []
+    psnrs['test_wPSNR'] = []
+    psnrs['training_subset_wPSNR'] = []
+    psnrs['cp'] = []
+    for cp in range(10, 91,10)+range(91,101,1):
+        print(cp)
         resultlist.append([cp])
-        for mode in ['validation', 'test']:
-            savep = utils.get_save_path(name, exp_no=run, ep_no=cp)
-            resultlist[-1] += main(savep, mode)
+        psnrs['cp'].append(cp)
+        for mode in ['validation', 'test', 'training_subset']:
+            print(mode)
+            savep = utils.get_save_path(name, exp_no=run, mode=mode, ep_no=cp-1, add='all')
+            x = main(savep, mode, axis=0, res=16, add='zyx')
+            resultlist[-1] += x
+
+            psnrs[mode].append(x[1])
+            psnrs[mode+'_wPSNR'].append(x[3])
+    with open(os.path.dirname(savep)+'/checkpointer.p', 'w') as f:
+        pickle.dump(psnrs, f)
     as_str = tabulate.tabulate(resultlist, headers=['it', 'mse valid', 'psnr valid', 'bc_mse valid', 'bc_psnr valid',
                                                     'mse test', 'psnr test', 'bc_mse test', 'bc_psnr_test'])
 
-    summary_file = open(os.path.dirname(utils.get_save_path(name, run, cp))+'/checkpoint_eval.txt', 'w')
-    summary_file.write(as_str)
-    summary_file.close()
+
+    #summary_file = open(os.path.dirname(utils.get_save_path(name, run, cp))+'/checkpoint_eval.txt', 'w')
+    #summary_file.write(as_str)
+    #summary_file.close()
 
 
 if __name__ == '__main__':
     #main('test_4divisible_FSRCNN.h5')
-    #main_evaluate_fsrcnn_longrun()
-    #main_evaluate_unets()
+    #main_evaluate_fsrcnn_longrun(cp=149)
+    #main_evaluate_unets(cp=99)
+    #for d in [240,280]:
+    #    for s in [48,64]:
+    #        for m in [2,3,4]:
+    main('/groups/saalfeld/home/heinrichl/Projects/results_keras/new_wogt_3-32-30002/validation15_.h5',
+         mode='validation', axis=0, res=16, add='zyx')
+
+    #
+    #n_l = 4
+    #n_f = 64
+    #n_c = 3
+    #print(n_l, n_f, n_c)
+    #main_evaluate_checkpoints('longUnet_nl{0:}_nf{1:}_nc{2:}_3868b61_scheduler10'.format(n_l, n_f, n_c), run=0)
+    #name='longUnet_nl{0:}_nf{1:}_nc{2:}_3868b61_scheduler10'.format(n_l, n_f, n_c)
+    #run=0
+    #mode='test'
+    #cp=100
+    #savep = utils.get_save_path(name, exp_no=run, mode=mode, ep_no=cp - 1, add='all')
+    #x = main(savep, mode, axis=0, res=16, add='zyx')
+    #for conf in [(4,64,2), (4,64,3), (3,64,2), (3,64,3)]:
+    #    exp_name = 'longUnet_nl{0:}_nf{1:}_nc{2:}_3868b61_scheduler10'.format(*conf)
+    #    for ep in [49,99]:
+    #        print(conf, ep)
+    #        savep = utils.get_save_path(exp_name, exp_no=0, ep_no=ep, mode='training')
+    #        print(savep)
+    #        main(savep, mode='training', axis=0, add='zyx')
+
+
+            #simple_evaluator = Evaluator(modelp, savep, utils.get_data_path('training', 16, add='zyx'))
+            #simple_evaluator.run_full_evaluation(inner_cube=(24,48,48), bs=6)
     #evaluate_runs()
     #bicubic_main()
     #per_slice_main(utils.get_save_path('Unet_nl4_nc2_nf64_dc1',0,49), 'validation')
@@ -214,7 +269,13 @@ if __name__ == '__main__':
 
     #savep = utils.get_save_path(name, exp_no=run, ep_no=cp, mode=mode, add='new')
     #main(savep, mode, res=res, axis=2)
-    main(utils.get_save_path('Unet_best_zyx',3,28, add='w-gtzyx'), mode='validation', res=10,
-         add='zyx', axis=0)
-    #main(utils.get_save_path('FSRCNN_d{0:}_s{1:}_m{2:}'.format(240, 64, 2), exp_no=2, ep_no=49, mode='test'),
-    # mode='test')
+    #main('/nearline/saalfeld/larissa/older_keras_results/Unet_nl3_nc2_nf64_dc1/validation49_.h5', mode='validation',
+    #     res=16, add = '', axis=2)
+    #main(utils.get_save_path('FSRCNN_d240_s64_m3_3868b61',0,49, mode='test'), mode='test', res=16,
+    #     add='zyx', axis=0)
+    #main('/groups/saalfeld/home/heinrichl/Projects/results_keras/Unet_nl3_nf64_nc2_3868b61_lrconst-4/validation49_.h5',
+    #     mode='validation', add='zyx')
+    #main_evaluate_fsrcnn_longrun(0, 149)
+
+    #main('/groups/saalfeld/home/heinrichl/Projects/results_keras/FSRCNN_const1e-5_240482/test49_.h5',
+    #     mode='test', add='zyx')
