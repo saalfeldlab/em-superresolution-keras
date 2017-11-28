@@ -4,7 +4,7 @@ import json
 
 from keras.models import Model
 from keras.layers import Conv3D, MaxPooling3D, Conv3DTranspose, concatenate, Input, AveragePooling3D, Permute, add, \
-    Lambda
+    Lambda, BatchNormalization
 from keras.layers.advanced_activations import PReLU
 import keras.initializers
 from keras.optimizers import Adam
@@ -68,6 +68,11 @@ class IsoNet(object):
         curr_width = width
         remaining_factor = self.scaling_factor
         merge_index = []
+        if K.image_data_format() == 'channels_last':
+            batchnormaxis = -1
+        else:
+            batchnormaxis = 1
+
         for level in range(height):
             for conv_no in range(depth):
                 curr_ks = (iso_kernel_size[0],
@@ -79,6 +84,9 @@ class IsoNet(object):
                                                   activation='relu',
                                                   name='conv_downleg_l{0:}_c{1:}'.format(level, conv_no)))
                 model_pre["connectivity"].append(-1)
+                if batchnorm:
+                    model_pre["layers"].append(BatchNormalization(axis=batchnormaxis))
+                    model_pre["connectivity"].append(-1)
             if level < height - 1:  # going to the next level
                 if remaining_factor >= 2:
                     pool_size = (1, 2, 2)
@@ -102,7 +110,12 @@ class IsoNet(object):
                     #                                           activation='relu',
                     #                                           name='transconv_downleg_l{0:}'.format(level)))
                     model_pre["connectivity"].append(-1)
-                    last_layer_index = -2
+                    if batchnorm:
+                        model_pre["layers"].append(BatchNormalization(axis=batchnormaxis))
+                        model_pre["connectivity"].append(-1)
+                        last_layer_index = -3
+                    else:
+                        last_layer_index = -2
                     remaining_factor /= 2
                 else:
                     remaining_factor = 1
@@ -136,6 +149,9 @@ class IsoNet(object):
             #                                           activation='relu',
             #                                           name='transconv_upleg_l{0:}'.format(level)))
             model_pre["connectivity"].append(-1)
+            if batchnorm:
+                model_pre["layers"].append(BatchNormalization(axis=batchnormaxis))
+                model_pre["connectivity"].append(-1)
             model_pre["layers"].append(merge_caller)
             model_pre["connectivity"].append((-(len(model_pre["layers"]) - merge_index[level]), -1))
 
@@ -145,6 +161,9 @@ class IsoNet(object):
                                                   padding='same', activation='relu',
                                                   name='conv_upleg_l{0:}_c{1:}'.format(level, conv_no)))
                 model_pre["connectivity"].append(-1)
+                if batchnorm:
+                    model_pre["layers"].append(BatchNormalization(axis=batchnormaxis))
+                    model_pre["connectivity"].append(-1)
 
         model_pre["layers"].append(Conv3D(1, iso_kernel_size,
                                           kernel_initializer='he_normal', padding='same', activation='relu',
