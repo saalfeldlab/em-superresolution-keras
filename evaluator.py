@@ -39,9 +39,9 @@ class Evaluator(object):
         patch = np.empty(self.model.model.input_shape[self.spatial_slice])
         coord_slice = []
         patch_slice = []
-        for axis,axis_coord in enumerate(coord):
-            coord.slice.append(np.s_[axis_coord - self.model.model.input_shape[self.spatial_slice][axis] / 2 :
-                                     axis_coord + (self.model.model.input_shape[self.spatial_slice][axis] + 1) / 2])
+        for axis, axis_coord in enumerate(coord):
+            coord_slice.append(np.s_[axis_coord - self.model.model.input_shape[self.spatial_slice][axis] // 2 :
+                                     axis_coord + (self.model.model.input_shape[self.spatial_slice][axis] + 1) // 2])
             patch_slice.append(np.s_[:])
         coord_slice = tuple(coord_slice)
         patch_slice = tuple(patch_slice)
@@ -78,13 +78,15 @@ class Evaluator(object):
 
     def coordinate_generator(self, ignore_border):
         output_shape = self.model.model.output_shape[self.spatial_slice]
+
+        #calculate how much is not covered after covering the data with cubes
         border_remainder = (np.array(self.data.shape) - 2 * np.array(ignore_border) -
                             np.array(self.safety_margin)[0] + np.array(self.safety_margin)[1]) % (np.array(
                             output_shape) - 2 * np.array(ignore_border))
 
         extras = [[]] * len(border_remainder)
         for axis in range(len(border_remainder)):
-            if border_remainder[axis] != 0:
+            if border_remainder[axis] != 0:  # need additional sample points to cover all data
                 extras[axis] = [int(self.data.shape[axis] - output_shape[axis]//2 - self.safety_margin[1][axis])]
                 if axis == 0:
                     last = range(self.safety_margin[0][axis]+output_shape[axis]//2, self.data.shape[axis] -
@@ -95,10 +97,13 @@ class Evaluator(object):
                                                         % self.model.scaling_factor))]
 
         k = 1
-        for coord in itertools.product(*(range(self.safety_margin[0] + np.array(output_shape) // 2, self.data.shape -
-                                       np.array(output_shape) // 2 - self.safety_margin[1], np.array(output_shape) -
-                2 * ignore_border) +
-                                       extras)):
+        coord_seq = [[]] * len(border_remainder)
+        for axis in range(len(border_remainder)):
+            coord_seq[axis] = range(self.safety_margin[0][axis] + np.array(output_shape)[axis]//2,
+                                    self.data.shape[axis] - np.array(output_shape)[axis]//2 - self.safety_margin[1][axis],
+                                    np.array(output_shape)[axis] - 2 * np.array(ignore_border)[axis]) + extras[axis]
+
+        for coord in itertools.product(coord_seq[0], coord_seq[1], coord_seq[2]):
             yield k, coord
             k += 1
 
@@ -109,18 +114,21 @@ class Evaluator(object):
         ignore_border = tuple([int(ib) for ib in ignore_border])
         self._prepare_output_file(target_path, self.data.shape)
         cg, cg_for_bg = itertools.tee(self.coordinate_generator(ignore_border))
-        bg = self.batch_generator(ignore_border, bs, cg)
+        bg = self.batch_generator(ignore_border, bs, cg_for_bg)
         for batch in bg:
             predicted_batch = self.model.model.predict_on_batch(batch)
-            for sample, (processed_examples, coord) in zip(predicted_batch):
+            for sample, (processed_examples, coord) in zip(predicted_batch, cg):
                 self.output_file[self.pred_dset_name].write_direct(
-                    sample,
-                    np.s_[0, ignore_border[0]: -ignore_border[0], ignore_border[1]: -ignore_border[1],
-                          ignore_border[2]: -ignore_border[2]],
-                    np.s_[coord[0] - (sample.shape[1] - 2 * ignore_border[0]) // 2:
-                          coord[0] + (sample.shape[1] - 2 * ignore_border[0] + 1) // 2,
-                          coord[1] - (sample.shape[2] - 2 * ignore_border[1]) // 2:
-                          coord[1] + (sample.shape[2] - 2 * ignore_border[1] + 1) // 2,
-                          coord[2] - (sample.shape[3] - 2 * ignore_border[2]) // 2:
-                          coord[2] + (sample.shape[3] - 2 * ignore_border[2] + 1) // 2])
+                sample,
+                np.s_[ignore_border[0]: self.inner_cube_size[0]+ignore_border[0],
+                      ignore_border[1]: self.inner_cube_size[1]+ignore_border[1],
+                      ignore_border[2]: self.inner_cube_size[2]+ignore_border[2],
+                      0],
+                np.s_[coord[0] - (sample.shape[0] - 2 * ignore_border[0]) // 2:
+                      coord[0] + (sample.shape[0] - 2 * ignore_border[0] + 1) // 2,
+                      coord[1] - (sample.shape[1] - 2 * ignore_border[1]) // 2:
+                      coord[1] + (sample.shape[1] - 2 * ignore_border[1] + 1) // 2,
+                      coord[2] - (sample.shape[2] - 2 * ignore_border[2]) // 2:
+                      coord[2] + (sample.shape[2] - 2 * ignore_border[2] + 1) // 2])
+
         self.output_file.close()
