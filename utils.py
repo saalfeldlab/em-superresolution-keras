@@ -3,6 +3,7 @@ import numpy as np
 import scipy.misc
 import datetime
 import os
+import cv2
 
 
 def cut_to_sc(arr, scaling_factor, axis):
@@ -76,16 +77,28 @@ def cubic_up(arr, factor, axis):
     if arr.ndim < 2:
         raise ValueError("arr must be at least 2dim")
     sliceaxis = 1 if axis == 0 else 0
+
+    # compute size of array after reshaping and initialize with zeros
     nd_factor = np.ones(arr.ndim)
     nd_factor[axis] *= factor
     new_shape = (np.array(arr.shape)*(nd_factor)).astype(int)
     resized_arr = np.zeros(new_shape)
     new_shape = tuple(np.delete(new_shape, sliceaxis, 0).astype(int))
 
+    # for iteration construct the shape of each resized image
+    if arr.ndim==3:
+        new_shape_cv = np.delete(new_shape, sliceaxis, 0).astype(int)
+        #print(new_shape)
+    else:
+        new_shape_cv = new_shape
+    new_shape[sliceaxis]=1
+    new_shape_cv = tuple(new_shape_cv[::-1])
     for k in range(arr.shape[sliceaxis]):
         sliceobj = tuple([slice(None)]*sliceaxis+[slice(k, k+1, None)])
-        resized_arr[sliceobj] = np.expand_dims(scipy.misc.imresize(arr[sliceobj].squeeze(), new_shape,
-                                                                   interp='bicubic'), axis=sliceaxis)
+        resized_arr[sliceobj] = np.reshape(cv2.resize(arr[sliceobj].squeeze().astype('float'),new_shape_cv,
+                                                          interpolation=cv2.INTER_CUBIC), new_shape)
+        #resized_arr[sliceobj] = np.expand_dims(imresize(arr[sliceobj].squeeze(), new_shape,
+        #                                                           interp='bicubic'), axis=sliceaxis)
     return resized_arr
 
 
