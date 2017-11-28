@@ -59,7 +59,123 @@ class IsoNet(object):
         self.model = None
         self.scheduler = None
 
-    def unet_simple_spec(self, height, width, depth, iso_kernel_size=(3, 3, 3)):
+    def fullyconv_unet_simple_spec(self, height, width, depth, iso_kernel_size=(3, 3, 3), batchnorm=False):
+        model_pre = dict()
+        model_pre["layers"] = []
+        model_pre["connectivity"] = []
+        curr_shape = self.input_shape
+        curr_width = width
+        remaining_factor = self.scaling_factor
+        merge_index = []
+        if K.image_data_format() == 'channels_last':
+            batchnormaxis = -1
+        else:
+            batchnormaxis = 1
+
+        for level in range(height):
+            for conv_no in range(depth):
+                curr_ks = (iso_kernel_size[0],
+                           iso_kernel_size[1] * remaining_factor + (iso_kernel_size[1] * remaining_factor) % 2 - 1,
+                           iso_kernel_size[2] * remaining_factor + (iso_kernel_size[2] * remaining_factor) % 2 - 1)
+                model_pre["layers"].append(Conv3D(curr_width, curr_ks,
+                                                  kernel_initializer='he_normal',
+                                                  padding='same',
+                                                  activation='relu',
+                                                  name='conv_downleg_l{0:}_c{1:}'.format(level, conv_no)))
+                model_pre["connectivity"].append(-1)
+                if batchnorm:
+                    model_pre["layers"].append(BatchNormalization(axis=batchnormaxis))
+                    model_pre["connectivity"].append(-1)
+            if level < height - 1:  # going to the next level
+                if remaining_factor >= 2:
+                    pool_size = (1, 2, 2)
+                    curr_ks = (iso_kernel_size[0] * remaining_factor - 1,
+                               iso_kernel_size[1] * remaining_factor - 1,
+                               iso_kernel_size[2] * remaining_factor - 1)
+                    # if K.image_data_format() == 'channels_last':
+                    #    deconv_output = (None,) + tuple(curr_shape * np.array([remaining_factor, 1,
+                    # 1])) + (curr_width,)
+                    # else:
+                    #    deconv_output = (None, curr_width,) + tuple(curr_shape * np.array([remaining_factor, 1, 1]))
+                    model_pre["layers"].append(Conv3DTranspose(curr_width, curr_ks, strides=(remaining_factor, 1, 1),
+                                                               padding='same', activation='relu',
+                                                               kernel_initializer='he_normal_transposed',
+                                                               name='transconv_downloeg_l{0:}'.format(level)))
+                    # model_pre["layers"].append(Deconvolution3D(curr_width, curr_ks,
+                    #                                           output_shape=deconv_output,
+                    #                                           strides=(remaining_factor, 1,1),
+                    #                                           kernel_initializer='he_normal',
+                    #                                           padding='same',
+                    #                                           activation='relu',
+                    #                                           name='transconv_downleg_l{0:}'.format(level)))
+                    model_pre["connectivity"].append(-1)
+                    if batchnorm:
+                        model_pre["layers"].append(BatchNormalization(axis=batchnormaxis))
+                        model_pre["connectivity"].append(-1)
+                    last_layer_index = -2
+                    remaining_factor /= 2
+                else:
+                    remaining_factor = 1
+                    pool_size = (2, 2, 2)
+                    last_layer_index = -1
+
+                merge_index.append(len(model_pre["layers"]))
+                curr_shape = curr_shape / np.array(pool_size)
+                model_pre["connectivity"].append(last_layer_index)
+                curr_width *= 2
+                model_pre["layers"].append(Conv3D(curr_width, curr_ks, kernel_initializer='he_normal',
+                                                  padding='same', activation='relu', strides=pool_size,
+                                                  name='strided_conv_l{0:}'.format(
+                        level)))
+                if batchnorm:
+                    model_pre["layers"].append(BatchNormalization(axis=batchnormaxis))
+                    model_pre["connectivity"].append(-1)
+
+        for level in range(height - 1)[::-1]:
+            curr_shape = curr_shape * np.array([2 * remaining_factor, 2, 2])
+            curr_width /= 2
+            # if K.image_data_format() == 'channels_last':
+            #    deconv_output = (None, ) + tuple(curr_shape) + (curr_width,)
+            # else:
+            #    deconv_output = (None, curr_width, ) + tuple(curr_shape)
+            model_pre["layers"].append(Conv3DTranspose(curr_width, iso_kernel_size,
+                                                       strides=(2 * remaining_factor, 2, 2),
+                                                       kernel_initializer='he_normal_transposed',
+                                                       padding='same',
+                                                       activation='relu',
+                                                       name='transconv_upleg_l{0:}'.format(level)))
+
+            # model_pre["layers"].append(Deconvolution3D(curr_width, iso_kernel_size,
+            #                                           output_shape=deconv_output,
+            #                                           strides=(2*remaining_factor, 2, 2),
+            #                                           kernel_initializer='he_normal',
+            #                                           padding='same',
+            #                                           activation='relu',
+            #                                           name='transconv_upleg_l{0:}'.format(level)))
+            model_pre["connectivity"].append(-1)
+            if batchnorm:
+                model_pre["layers"].append(BatchNormalization(axis=batchnormaxis))
+                model_pre["connectivity"].append(-1)
+            model_pre["layers"].append(merge_caller)
+            model_pre["connectivity"].append((-(len(model_pre["layers"]) - merge_index[level]), -1))
+
+            for conv_no in range(depth):
+                model_pre["layers"].append(Conv3D(curr_width, iso_kernel_size,
+                                                  kernel_initializer='he_normal',
+                                                  padding='same', activation='relu',
+                                                  name='conv_upleg_l{0:}_c{1:}'.format(level, conv_no)))
+                model_pre["connectivity"].append(-1)
+                if batchnorm:
+                    model_pre["layers"].append(BatchNormalization(axis=batchnormaxis))
+                    model_pre["connectivity"].append(-1)
+
+        model_pre["layers"].append(Conv3D(1, iso_kernel_size,
+                                          kernel_initializer='he_normal', padding='same', activation='relu',
+                                          name='conv_final'))
+        model_pre["connectivity"].append(-1)
+        self.model_pre = model_pre
+
+    def unet_simple_spec(self, height, width, depth, iso_kernel_size=(3, 3, 3), batchnorm=False):
         #todo change to include scaling axis
         model_pre = dict()
         model_pre["layers"] = []
