@@ -32,10 +32,6 @@ def get_bg_borders(arr, bg=0):
     return bg_borders
 
 
-#def minimal_bg_borders(bg_borders):
-
-
-
 def cut_to_size(arr, cut_borders):
     slicing = [np.s_[:]] * arr.ndim
     for axis, cut_border_per_axis in enumerate(cut_borders):
@@ -56,7 +52,7 @@ def compute_wpsnr(arr, gt, scaling_factor=4., axis=0):
     downscaled = downscale_manually(gt, scaling_factor, axis)
     cubic = cubic_up(downscaled, scaling_factor, axis)
     weighting = 0.5 * (cubic - gt)**2 / (2 * np.max((cubic - gt)**2))
-    wmse = np.sum((arr - gt)**2 * weighting)/ arr.size
+    wmse = np.sum((arr - gt)**2 * weighting) / arr.size
     wpsnr = -10 * np.log10(wmse)
     return wpsnr
 

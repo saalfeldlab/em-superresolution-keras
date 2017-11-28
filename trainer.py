@@ -129,7 +129,7 @@ class Trainer(object):
             if num_outputs == 1:
                 if not self.cubic:
                     gt = batch
-            else:
+            else: #dummy
                 gt = np.zeros((self.bs, 1, 1, 1, 1))
             if self.normalize:
                 batch = (batch/255.).astype('float32')

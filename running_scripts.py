@@ -125,8 +125,8 @@ def training_fsrcnn_simulated_w_gt():
     name = 'FSRCNN_henormaltransposed_nottrunc'
     trainingfile = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16isozyx/training.h5'
     validationfile = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16isozyx/validation.h5'
-
-    exp_path = utils.get_exppath(results_dir, exp_name=name)
+    exp_path = results_dir + name + '/'
+    #exp_path = utils.get_exppath(results_dir, exp_name=name)
     print("output results and logs to:", exp_path)
     d = 240
     s = 64

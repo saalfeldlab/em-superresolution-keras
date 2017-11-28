@@ -140,33 +140,6 @@ def plot_upper_bound_training():
                prop={'size': 18}, loc=3)
     plt.show()
 
-def make_nn_and_bicubic_for_exp(png_file):
-    import scipy.ndimage
-    import scipy.misc
-    import utils
-    import os.path
-    exp_dir = os.path.dirname(png_file)
-    hr_img = scipy.ndimage.imread(png_file,flatten=True)
-    plt.imshow(255-hr_img, 'Greys')
-    plt.show()
-    down_img = utils.downscale_manually(hr_img, 4, 0)
-    plt.imshow(255-down_img, 'Greys')
-    plt.show()
-    print(os.path.join(os.path.dirname(png_file), 'down.png'))
-    scipy.misc.imsave(os.path.join(exp_dir, 'down.png'), down_img)
-    nn_img = np.repeat(down_img, 4, axis=0)
-    plt.imshow(255-nn_img, 'Greys')
-    plt.show()
-    scipy.misc.imsave(os.path.join(exp_dir, 'nn.png'), nn_img)
-    cubic_img = utils.cubic_up(down_img, 4, axis=0)
-    plt.imshow(255-cubic_img, 'Greys')
-    plt.show()
-    scipy.misc.imsave(os.path.join(exp_dir, 'cubic.png'), cubic_img)
-if __name__ == '__main__':
-    #make_nn_and_bicubic_for_exp('/groups/saalfeld/home/heinrichl/figures/wogt/exp4_100/gt.png')
-    plot_loss('/nrs/saalfeld/heinrichl/results_keras/Unet3-32-2_wogt/finetuning_normalweight/loss_history15.p',
-              psnr=False, log=True)
-    #plot_upper_bound_training()
 
 def make_nn_and_bicubic_for_exp(png_file):
     import scipy.ndimage

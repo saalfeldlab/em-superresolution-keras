@@ -395,8 +395,15 @@ class IsoNet(object):
                                             padding='valid')(tensors[-1]))
             predavg_idx_1 = len(tensors) - 1
 
+            if K.image_data_format() == 'channels_last':
+                yzx_permute = (2, 1, 3, 4)
+                xyz_permute = (3, 2, 1, 4)
+            else:
+                yzx_permute = (1, 3, 2, 4)
+                xyz_permute = (1, 4, 3, 2)
+
             # first rotation zyx -> yzx
-            tensors.append(Permute((1, 3, 2, 4), name='premute_yzx_forward')(tensors[pred_idx_1]))
+            tensors.append(Permute(yzx_permute, name='premute_yzx_forward')(tensors[pred_idx_1]))
             tensors.append(AveragePooling3D(pool_size=(self.scaling_factor, 1, 1),
                                             strides=(self.scaling_factor, 1, 1),
                                             padding='valid')(tensors[-1]))
@@ -412,11 +419,11 @@ class IsoNet(object):
                                             strides=(self.scaling_factor, 1, 1),
                                             padding='valid')(tensors[-1]))
             predavg_idx_1_2 = len(tensors) - 1
-            tensors.append(Permute((1, 3, 2, 4), name='permute_yzx_backward')(tensors[-2]))
+            tensors.append(Permute(yzx_permute, name='permute_yzx_backward')(tensors[-2]))
             pred_idx_1_2 = len(tensors) - 1
 
             #second rotation zyx -> xyz
-            tensors.append(Permute((1, 4, 3, 2), name='permute_xyz_forward')(tensors[pred_idx_1]))
+            tensors.append(Permute(xyz_permute, name='permute_xyz_forward')(tensors[pred_idx_1]))
             tensors.append(AveragePooling3D(pool_size=(self.scaling_factor, 1, 1),
                                             strides=(self.scaling_factor, 1, 1),
                                             padding='valid')(tensors[-1]))
@@ -432,7 +439,7 @@ class IsoNet(object):
                                             strides=(self.scaling_factor, 1, 1),
                                             padding='valid')(tensors[-1]))
             predavg_idx_1_3 = len(tensors) - 1
-            tensors.append(Permute((1, 4, 3, 2), name='permute_xyz_backward')(tensors[-2]))
+            tensors.append(Permute(xyz_permute, name='permute_xyz_backward')(tensors[-2]))
             pred_idx_1_3 = len(tensors) - 1
 
             # prepare loss
@@ -461,7 +468,7 @@ class IsoNet(object):
 
             if self.simulate:
                 tensors.append(Lambda(lambda x: -x)(tensors[0]))
-                tensors.append(add([tensors[-1], tensors[pred_idx_1]], mode='sum', name='diff_gt'))
+                tensors.append(add([tensors[-1], tensors[pred_idx_1]], name='diff_gt'))
                 diff_idx_gt = len(tensors)-1
                 outputs.append(tensors[diff_idx_gt])
 
