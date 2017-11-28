@@ -488,9 +488,15 @@ class IsoNet(object):
                       'diff_avg_1': mean_squared,
                       'diff_avg_1_2': mean_squared,
                       'diff_avg_1_3': mean_squared}
+            loss_weights = {'diff_1_2': 0.5 / 2.,
+                            'diff_1_3': 0.5 / 2.,
+                            'diff_avg_1': 0.5 / 2.*10,#*100,
+                            'diff_avg_1_2': 0.5 / 4.*10,#*100,
+                            'diff_avg_1_3': 0.5 / 4.*10}#*100}
 
             if self.simulate:
                 losses['diff_gt'] = dummy_loss
+                loss_weights['diff_gt'] = 0.
                 metrics = {'diff_gt': mean_squared}
             else:
                 metrics = None
