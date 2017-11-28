@@ -135,3 +135,16 @@ class Trainer(object):
                 batch = (batch/255.).astype('float32')
                 gt = (gt/255.).astype('float32')
             yield ([batch], [gt] * num_outputs)
+
+    def evaluate(self, steps):
+        print(self.model.model.metrics_names)
+        print("Training set:")
+        train_results = self.model.model.evaluate_generator(self.train_generator, steps=steps,
+                                                            max_queue_size=2*self.bs)
+        print(train_results)
+
+        print("Validation set:")
+        validation_results = self.model.model.evaluate_generator(self.valid_generator, steps=steps,
+                                                                 max_queue_size=2*self.bs)
+        print(validation_results)
+        return train_results + validation_results
