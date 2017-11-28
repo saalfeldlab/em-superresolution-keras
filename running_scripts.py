@@ -226,8 +226,91 @@ def training_unet_simulated_wo_gt():
     e_finetuned.run(finetune_exp_path + 'validation{0:}.h5'.format(pretraining_epochs + finetuning_epochs), t.bs)
 
 
+def training_unet_from_cubic():
+    results_dir = '/nrs/saalfeld/heinrichl/results_keras/'
+    name_cubic = 'Unet3-32-3_wogt_10cubic'
+    trainingfile = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16isozyx/training.h5'
+    validationfile = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16isozyx/validation.h5'
+
+    exp_path = results_dir + name_cubic + '/'
+    finetune_exp_path = exp_path + 'finetuning_avg10weights_lrs1/'
+    os.mkdir(finetune_exp_path)
+    print("output results and logs to:", exp_path)
+
+    pretraining_epochs = 11
+    finetuning_epochs = 140
+    h = 3
+    w = 32
+    d = 3
+
+    m = IsoNet(4, (16, 64, 64), simulate=True, from_groundtruth=False)
+    m.unet_simple_spec(h, w, d)
+    m.training_scheme()
+    m.compile(1e-04, 1)
+    m.save_json(finetune_exp_path+'model_def_json.txt')
+    m.load_weights(exp_path+'weights{0:}.h5'.format(pretraining_epochs-1))
+
+    t = Trainer(m, finetune_exp_path, trainingfile, validationfile)
+    t.run(pretraining_epochs + finetuning_epochs, start_epoch=pretraining_epochs)
+
+    m_pred = IsoNet(4, (16, 64, 64), simulate=True, from_groundtruth=True)
+    m_pred.unet_simple_spec(h, w, d)
+    m_pred.training_scheme()
+    m_pred.compile(1e-04, 10)
+    m_pred.load_weights(finetune_exp_path + 'weights{0:}.h5'.format(pretraining_epochs + finetuning_epochs - 1))
+    e_pred = Evaluator(m_pred, data_path=validationfile)
+    e_pred.run(finetune_exp_path + 'validation{0:}.h5'.format(pretraining_epochs + finetuning_epochs - 1), t.bs)
+
+
+
+def prediction():
+    epoch=50
+    validationfile = '/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16isozyx/validation.h5'
+    exp_path='/nrs/saalfeld/heinrichl/results_keras/Unetwogt_testwithnewinit0007/'
+    mod = IsoNet(4, (16,64,64), simulate=True, from_groundtruth=True)
+    mod.unet_simple_spec(3,32,3)
+    mod.training_scheme()
+    mod.compile(1e-04, 10)
+    mod.load_weights(exp_path+'weights{0:}.h5'.format(epoch))
+    e = Evaluator(mod, data_path=validationfile)
+    e.run(exp_path+'cubicvalidation{0:}.h5'.format(epoch), 6)
+
+def patches():
+    #def nn(arr, scale, axis):
+    #    scale_nd = np.ones(arr.ndim)
+    #    scale_nd[axis] = scale
+    #    new_shape = np.array(arr.shape)*scale_nd
+    #    arr_new = np.zeros(new_shape)
+    #    for k in range(arr.shape[axis]):
+    #        sliceobj = tuple([slice(None)]*axis+[slice(k, k+1, None)])
+    #        arr_new[sliceobj] = np.repeat()
+
+    import scipy.ndimage
+    import scipy.misc
+    expno=8
+    im = scipy.ndimage.imread('/groups/saalfeld/saalfeldlab/posters/miccai-2017/with_groundtruth/exp{0:}_new/gt.png'
+                              ''.format(expno)
+                              )[:,
+         :,0]/255.
+    print(im.shape)
+    print(np.max(im), np.min(im))
+    im_down = utils.downscale_manually(im, 4, 0)
+    im_cubic = utils.cubic_up(im_down, 4, 0)
+    im_nn = np.repeat(im_down, 4, 0)
+    print(im_down.shape)
+    print(im_cubic.shape)
+    print(im_nn.shape)
+    scipy.misc.imsave('/groups/saalfeld/saalfeldlab/posters/miccai-2017/with_groundtruth/exp{'
+                      '0:}_new/cubic.png'.format(expno), im_cubic)
+    scipy.misc.imsave('/groups/saalfeld/saalfeldlab/posters/miccai-2017/with_groundtruth/exp{'
+                      '0:}_new/nn.png'.format(expno), im_nn)
 if __name__ == '__main__':
-    training_unet_simulated_w_gt()
+    #prediction()
+    #training_unet_simulated_wo_gt()
+    #training_unet_from_cubic()
+    #patches()
+    generate_evaluation()
+    #evaluate_prediction()
     #continue_unet_training()
     #training_fsrcnn_simulated_w_gt()
     #continue_fsrcnn_training()
