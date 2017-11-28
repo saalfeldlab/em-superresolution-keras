@@ -10,8 +10,9 @@ def get_loss_values(loss_file):
         return pickle.load(f)
 
 
-def plot_loss(loss_file, psnr=True, log=False):
+def plot_loss(loss_file, psnr=True, log=False,smoothing=22*22):
     loss_values = get_loss_values(loss_file)
+    loss_values = pd.rolling_mean(np.array(loss_values), smoothing)
     if psnr:
         loss_values = [-10*np.log10(v) for v in loss_values]
     plt.plot(loss_values)
@@ -23,6 +24,7 @@ def plot_loss(loss_file, psnr=True, log=False):
     else:
         plt.ylabel('MSE')
     plt.grid()
+    plt.show()
 
 
 def plot_multiple_losses(list_of_loss_files, psnr=True, log=False, labels=None, list_of_iterations=None,
