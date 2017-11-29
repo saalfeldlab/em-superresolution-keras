@@ -1,0 +1,40 @@
+#!/bin/bash
+
+pyDir="/groups/saalfeld/home/bogovicj/dev/sr/em-superresolution-keras"
+
+trainIm='/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16iso/training.h5'
+validIm='/nrs/saalfeld/heinrichl/SR-data/FIBSEM/downscaled/bigh5-16iso/validation.h5'
+
+#dictionarySize=64
+dictionarySize=512
+#dictionarySize=1024
+
+nSamples=200000
+niters=10000
+
+#nSamples=2000
+#niters=100
+
+patchSize="8-8-8"
+
+
+for lambda in 0.07 0.15 0.3
+#for lambda in 0.15
+do
+
+    echo $lambda
+    #run_script "qsub -pe batch 8 -cwd -V" learnSrDictSpams "patch=$patchSize, k=$dictionarySize, N=$nSamples, iters=$niters, lambda=$lambda" -i $trainIm -n $nSamples -k $dictionarySize -r 4 -p $patchSize -t $niters -d 'raw' -r 8 -l $lambda --normalize 
+    run_script "qsub -pe batch 8 -cwd -V" learnSrDictSpams "FEWER ITERATIONS, patch=$patchSize, k=$dictionarySize, N=$nSamples, iters=$niters, lambda=$lambda" -i $trainIm -n $nSamples -k $dictionarySize -r 4 -p $patchSize -t $niters -d 'raw' -r 8 -l $lambda --normalize -s $validIm
+
+    sleep 1
+done
+
+#lambda="0.07"
+#lambda="0.15"
+#lambda="0.3"
+
+#run_script "qsub -pe batch 4 -cwd -V" learnSrDictSpams "Test of 2d dictionary learning" $trainIm $validImg -n $nSamples -k $dictionarySize -r 4 -p $patchSize -t $niters 
+#run_script "qsub -pe batch 4 -cwd -V" learnSrDictSpams "description" -i $trainIm -s $validIm -n $nSamples -k $dictionarySize -r 4 -p $patchSize -t $niters -d 'raw'
+#run_script "qsub -pe batch 8 -cwd -V" learnSrDictSpams "patch=8-8-8, k=512, N=40k, iters=20k, lambda=0.3" -i $trainIm -n $nSamples -k $dictionarySize -r 4 -p $patchSize -t $niters -d 'raw' -r 8 -l $lambda --normalize
+
+#run_script "qsub -pe batch 8 -cwd -V" learnSrDictSpams "patch=$patchSize, k=$dictionarySize, N=$nSamples, iters=$niters, lambda=$lambda" -i $trainIm -n $nSamples -k $dictionarySize -r 4 -p $patchSize -t $niters -d 'raw' -r 8 -l $lambda --normalize -s $validIm

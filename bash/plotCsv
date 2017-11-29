@@ -1,0 +1,4 @@
+#!/bin/bash
+
+pyscript="/groups/saalfeld/home/bogovicj/dev/sr/em-superresolution-keras/plot_csv.py"
+python $pyscript "$@"
